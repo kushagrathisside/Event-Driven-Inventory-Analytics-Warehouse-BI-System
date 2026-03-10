@@ -2,7 +2,7 @@
 This project implements a production-grade inventory analytics platform designed for a pharmaceutical warehouse environment. The system converts operational inventory data into a historically accurate, analytics-ready warehouse, and exposes it to Power BI through a carefully designed semantic layer.
 
 ##### <Some files of this project are shared in basesetup branch, you can have a look. I will update this repository with proper instruction soon as I get some time.>
-For Quick Understanding: (Thank to Gemini AI)
+For Quick Understanding: (Thanks to Gemini AI for Image Generation (Not for the project idea or implementation:)))
 <img width="2816" height="1536" alt="coolarch" src="https://github.com/user-attachments/assets/b93fa02b-3d3b-4f0e-9ebd-0005b71248c8" />
 
 If you are interested in proper understanding of the architecture:
