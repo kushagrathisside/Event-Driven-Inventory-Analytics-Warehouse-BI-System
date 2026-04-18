@@ -7,3 +7,6 @@ For Quick Understanding: (Thanks to Gemini AI for Image Generation (Not for the 
 
 If you are interested in proper understanding of the architecture:
 <img width="2816" height="1536" alt="architecture" src="https://github.com/user-attachments/assets/c0a7c2e9-08a6-472c-a683-6cd94a1a059b" />
+
+Final Layer (PowerBI Tables):
+<img width="1919" height="815" alt="Screenshot 2026-04-19 020747" src="https://github.com/user-attachments/assets/aaa28e54-7fc9-41ec-839e-021f75d91fbd" />
