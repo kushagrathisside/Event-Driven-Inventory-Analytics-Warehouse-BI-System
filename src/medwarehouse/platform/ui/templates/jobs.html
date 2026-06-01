@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h3>Pipeline Jobs</h3>
+      <p class="muted">Only catalogued commands can be started or stopped from this dashboard.</p>
+    </div>
+  </div>
+  <div id="jobsGrid" class="job-grid">
+    {% for job in status.controls.jobs %}
+    <article class="job-card">
+      <div class="row-spread">
+        <div>
+          <strong>{{ job.name }}</strong>
+          <p class="muted compact">{{ job.stage }} · {{ job.domain }}</p>
+        </div>
+        <span class="pill tone-{{ job.status }}">{{ job.status }}</span>
+      </div>
+      <p>{{ job.description }}</p>
+      <div class="kv-list">
+        <div class="kv-row"><span>Command</span><code>{{ job.command }}</code></div>
+        <div class="kv-row"><span>PID</span><code>{{ job.pid or 'n/a' }}</code></div>
+        <div class="kv-row"><span>Started</span><code>{{ job.started_at or 'n/a' }}</code></div>
+        <div class="kv-row"><span>Finished</span><code>{{ job.finished_at or 'n/a' }}</code></div>
+      </div>
+      <div class="button-row">
+        <button class="button button-primary" type="button" data-job-action="start" data-job-id="{{ job.job_id }}">Start</button>
+        {% if job.long_running %}
+        <button class="button button-secondary" type="button" data-job-action="stop" data-job-id="{{ job.job_id }}">Stop</button>
+        {% endif %}
+      </div>
+      {% if job.message %}
+      <div class="note note-info">{{ job.message }}</div>
+      {% endif %}
+      <div class="log-box">{% for line in job.logs[-8:] %}{{ line }}
+{% endfor %}</div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
+

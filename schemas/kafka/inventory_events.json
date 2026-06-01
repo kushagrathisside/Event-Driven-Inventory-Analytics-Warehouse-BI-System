@@ -1,0 +1,75 @@
+{
+  "topic": "inventory_events",
+  "description": "Immutable inventory change events emitted by Inventory and Procurement services",
+  "key": "product_id",
+
+  "envelope": {
+    "event_id": "uuid",
+    "event_type": "string",
+    "event_time": "ISO-8601 UTC timestamp",
+    "producer": "string",
+    "schema_version": 1
+  },
+
+  "event_types": {
+    "STOCK_RECEIVED": {
+      "description": "Stock received into warehouse from supplier",
+      "payload": {
+        "product_id": "uuid",
+        "warehouse_id": "uuid",
+        "batch_number": "string",
+        "expiry_date": "YYYY-MM-DD",
+        "quantity_delta": "positive integer",
+        "supplier_id": "uuid"
+      }
+    },
+
+    "STOCK_SOLD": {
+      "description": "Stock reduced due to a completed sale",
+      "payload": {
+        "product_id": "uuid",
+        "warehouse_id": "uuid",
+        "batch_number": "string",
+        "expiry_date": "YYYY-MM-DD",
+        "quantity_delta": "negative integer",
+        "sale_id": "uuid"
+      }
+    },
+
+    "STOCK_ADJUSTED": {
+      "description": "Manual or automated stock correction",
+      "payload": {
+        "product_id": "uuid",
+        "warehouse_id": "uuid",
+        "batch_number": "string",
+        "quantity_delta": "integer",
+        "reason": "AUDIT | DAMAGE | SYSTEM_CORRECTION"
+      }
+    },
+
+    "STOCK_EXPIRED": {
+      "description": "Stock removed due to expiry",
+      "payload": {
+        "product_id": "uuid",
+        "warehouse_id": "uuid",
+        "batch_number": "string",
+        "expiry_date": "YYYY-MM-DD",
+        "quantity_delta": "negative integer"
+      }
+    }
+  },
+
+  "schema_evolution_rules": {
+    "allowed": [
+      "Add new event types",
+      "Add new optional fields",
+      "Add new topics"
+    ],
+    "forbidden": [
+      "Remove fields",
+      "Change field meaning",
+      "Rename existing fields"
+    ]
+  }
+}
+

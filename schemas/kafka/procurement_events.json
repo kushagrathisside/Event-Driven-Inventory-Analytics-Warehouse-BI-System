@@ -1,0 +1,64 @@
+{
+  "topic": "procurement_events",
+  "description": "Procurement lifecycle events emitted by procurement and automation services",
+  "key": "product_id",
+
+  "envelope": {
+    "event_id": "uuid",
+    "event_type": "string",
+    "event_time": "ISO-8601 UTC timestamp",
+    "producer": "procurement_service",
+    "schema_version": 1
+  },
+
+  "event_types": {
+    "PO_CREATED": {
+      "description": "Purchase order created manually or automatically",
+      "payload": {
+        "po_id": "uuid",
+        "product_id": "uuid",
+        "ordered_quantity": "positive integer (base units)",
+        "supplier_id": "uuid",
+        "trigger_reason": "AUTO_REORDER | MANUAL"
+      }
+    },
+
+    "PO_APPROVED": {
+      "description": "Purchase order approved",
+      "payload": {
+        "po_id": "uuid",
+        "approved_by": "string"
+      }
+    },
+
+    "PO_RECEIVED": {
+      "description": "Purchase order received into warehouse",
+      "payload": {
+        "po_id": "uuid",
+        "product_id": "uuid",
+        "received_quantity": "positive integer (base units)",
+        "warehouse_id": "uuid"
+      }
+    },
+
+    "PO_CANCELLED": {
+      "description": "Purchase order cancelled",
+      "payload": {
+        "po_id": "uuid",
+        "reason": "string"
+      }
+    }
+  },
+
+  "schema_evolution_rules": {
+    "allowed": [
+      "Add new procurement event types",
+      "Add optional supplier metadata"
+    ],
+    "forbidden": [
+      "Change PO lifecycle semantics",
+      "Remove po_id or product_id"
+    ]
+  }
+}
+

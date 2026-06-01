@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid-two">
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h3>Service Stack</h3>
+        <p class="muted">Compose-discovered services are shown independently from control actions.</p>
+      </div>
+      <span class="pill tone-{{ status.metrics.infra.overall_status }}">{{ status.metrics.infra.overall_status }}</span>
+    </div>
+    <div id="infraServices" class="stack">
+      {% for service in status.metrics.infra.services %}
+      <div class="row-spread item-card">
+        <strong>{{ service.name }}</strong>
+        <span class="pill tone-{{ 'healthy' if service.status == 'running' else 'warning' }}">{{ service.status }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% if status.metrics.infra.error %}
+    <div class="note note-bad">{{ status.metrics.infra.error }}</div>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <h3>Controls And Logs</h3>
+    <div class="button-row">
+      <button class="button button-primary" type="button" data-infra-action="start">Start Services</button>
+      <button class="button button-secondary" type="button" data-infra-action="stop">Stop Services</button>
+    </div>
+    <div id="infraControl" class="kv-list">
+      <div class="kv-row"><span>Current Action</span><code>{{ status.controls.infra.current_action or 'n/a' }}</code></div>
+      <div class="kv-row"><span>Status</span><code>{{ status.controls.infra.status }}</code></div>
+      <div class="kv-row"><span>Started</span><code>{{ status.controls.infra.started_at or 'n/a' }}</code></div>
+      <div class="kv-row"><span>Finished</span><code>{{ status.controls.infra.finished_at or 'n/a' }}</code></div>
+      <div class="kv-row"><span>PID</span><code>{{ status.controls.infra.pid or 'n/a' }}</code></div>
+    </div>
+    <div id="infraLogs" class="log-box">{% for line in status.controls.infra.logs[-12:] %}{{ line }}
+{% endfor %}</div>
+  </article>
+</section>
+{% endblock %}
+

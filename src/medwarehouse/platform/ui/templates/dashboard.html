@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid-two">
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h3>Alert Summary</h3>
+        <p class="muted">Rule-based freshness, infrastructure, quality, and orchestration signals.</p>
+      </div>
+      <div class="filter-row">
+        <select id="alertSeverityFilter" class="select">
+          <option value="all">All Severities</option>
+          <option value="CRITICAL">Critical</option>
+          <option value="WARNING">Warning</option>
+          <option value="INFO">Info</option>
+        </select>
+        <select id="alertSourceFilter" class="select">
+          <option value="all">All Sources</option>
+          {% for source in status.alerts.summary.sources %}
+          <option value="{{ source }}">{{ source }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-chip tone-critical">Critical {{ status.alerts.summary.critical }}</div>
+      <div class="stat-chip tone-warning">Warning {{ status.alerts.summary.warning }}</div>
+      <div class="stat-chip tone-neutral">Info {{ status.alerts.summary.info }}</div>
+    </div>
+    <div id="dashboardAlerts" class="stack">
+      {% if status.alerts.active %}
+      {% for alert in status.alerts.active %}
+      <article class="alert-card severity-{{ alert.severity|lower }}">
+        <div class="row-spread">
+          <strong>{{ alert.name }}</strong>
+          <span class="pill tone-{{ alert.severity|lower }}">{{ alert.severity }}</span>
+        </div>
+        <p>{{ alert.message }}</p>
+        <p class="muted compact">{{ alert.source }} · {{ alert.timestamp }}</p>
+      </article>
+      {% endfor %}
+      {% else %}
+      <div class="empty-state">No active alerts. The monitoring rules are currently quiet.</div>
+      {% endif %}
+    </div>
+  </article>
+
+  <article class="panel">
+    <h3>Key Metrics</h3>
+    <div id="dashboardMetrics" class="metric-grid">
+      <div class="metric-card">
+        <span>Bronze Files</span>
+        <strong>{{ status.metrics.pipeline.bronze.count }}</strong>
+      </div>
+      <div class="metric-card">
+        <span>Silver Files</span>
+        <strong>{{ status.metrics.pipeline.silver.count }}</strong>
+      </div>
+      <div class="metric-card">
+        <span>Staging Rows</span>
+        <strong>{{ status.metrics.pipeline.staging.count if status.metrics.pipeline.staging.count is not none else 'n/a' }}</strong>
+      </div>
+      <div class="metric-card">
+        <span>Snapshot Rows</span>
+        <strong>{{ status.metrics.pipeline.warehouse.snapshot_count if status.metrics.pipeline.warehouse.snapshot_count is not none else 'n/a' }}</strong>
+      </div>
+    </div>
+  </article>
+</section>
+
+<section class="grid-two">
+  <article class="panel">
+    <h3>Environment</h3>
+    <div class="kv-list">
+      <div class="kv-row"><span>Environment</span><code>{{ status.environment.env_name }}</code></div>
+      <div class="kv-row"><span>.env present</span><code>{{ 'yes' if status.environment.env_file_exists else 'no' }}</code></div>
+      <div class="kv-row"><span>Kafka</span><code>{{ status.environment.kafka_bootstrap_servers }}</code></div>
+      <div class="kv-row"><span>Analytics DB</span><code>{{ status.environment.analytics_db }}</code></div>
+      <div class="kv-row"><span>Project Root</span><code>{{ status.environment.project_root }}</code></div>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h3>Coverage And Orchestration</h3>
+    <div id="dashboardCoverage" class="stack">
+      {% for item in status.coverage %}
+      <div class="item-card">
+        <div class="row-spread">
+          <strong>{{ item.domain|capitalize }}</strong>
+          <span class="pill tone-{{ 'healthy' if 'implemented' in item.coverage.lower() else 'warning' }}">{{ item.coverage }}</span>
+        </div>
+        <p class="muted compact">{{ item.details }}</p>
+      </div>
+      {% endfor %}
+      <div class="item-card">
+        <div class="row-spread">
+          <strong>{{ status.orchestration.dag_id }}</strong>
+          <span class="pill tone-{{ 'healthy' if status.orchestration.dag_exists else 'warning' }}">{{ 'defined' if status.orchestration.dag_exists else 'missing' }}</span>
+        </div>
+        <p class="muted compact">{{ status.orchestration.dag_path }}</p>
+      </div>
+    </div>
+  </article>
+</section>
+{% endblock %}
+

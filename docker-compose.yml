@@ -1,0 +1,167 @@
+x-proxy-env: &proxy-env
+  HTTP_PROXY: ${HTTP_PROXY:-}
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  NO_PROXY: ${NO_PROXY:-}
+  http_proxy: ${HTTP_PROXY:-}
+  https_proxy: ${HTTPS_PROXY:-}
+  no_proxy: ${NO_PROXY:-}
+
+x-proxy-build-args: &proxy-build-args
+  HTTP_PROXY: ${HTTP_PROXY:-}
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  NO_PROXY: ${NO_PROXY:-}
+  http_proxy: ${HTTP_PROXY:-}
+  https_proxy: ${HTTPS_PROXY:-}
+  no_proxy: ${NO_PROXY:-}
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: medwarehouse-postgres
+    environment:
+      <<: *proxy-env
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+      - ./:/workspace
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: medwarehouse-zookeeper
+    environment:
+      <<: *proxy-env
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: medwarehouse-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      <<: *proxy-env
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  airflow-init:
+    build:
+      context: .
+      dockerfile: docker/airflow/Dockerfile
+      args:
+        <<: *proxy-build-args
+    container_name: medwarehouse-airflow-init
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    environment:
+      <<: *proxy-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/airflow/project/src
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+      MW_MASTER_DB_HOST: postgres
+      MW_ANALYTICS_ADMIN_DB_HOST: postgres
+      MW_ANALYTICS_WRITER_DB_HOST: postgres
+      MW_ANALYTICS_READER_DB_HOST: postgres
+      MW_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    volumes:
+      - ./:/opt/airflow/project
+      - airflow_logs:/opt/airflow/logs
+    command: >
+      bash -lc "
+      airflow db migrate &&
+      airflow users create
+      --username admin
+      --password admin
+      --firstname Med
+      --lastname Warehouse
+      --role Admin
+      --email admin@example.com
+      "
+
+  airflow-webserver:
+    build:
+      context: .
+      dockerfile: docker/airflow/Dockerfile
+      args:
+        <<: *proxy-build-args
+    container_name: medwarehouse-airflow-webserver
+    depends_on:
+      - airflow-init
+      - postgres
+      - kafka
+    env_file:
+      - .env
+    environment:
+      <<: *proxy-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/airflow/project/src
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+      MW_MASTER_DB_HOST: postgres
+      MW_ANALYTICS_ADMIN_DB_HOST: postgres
+      MW_ANALYTICS_WRITER_DB_HOST: postgres
+      MW_ANALYTICS_READER_DB_HOST: postgres
+      MW_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    volumes:
+      - ./:/opt/airflow/project
+      - ./airflow/dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+    ports:
+      - "8080:8080"
+    command: webserver
+
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: docker/airflow/Dockerfile
+      args:
+        <<: *proxy-build-args
+    container_name: medwarehouse-airflow-scheduler
+    depends_on:
+      - airflow-init
+      - postgres
+      - kafka
+    env_file:
+      - .env
+    environment:
+      <<: *proxy-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/airflow/project/src
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+      MW_MASTER_DB_HOST: postgres
+      MW_ANALYTICS_ADMIN_DB_HOST: postgres
+      MW_ANALYTICS_WRITER_DB_HOST: postgres
+      MW_ANALYTICS_READER_DB_HOST: postgres
+      MW_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    volumes:
+      - ./:/opt/airflow/project
+      - ./airflow/dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+    command: scheduler
+
+volumes:
+  postgres_data:
+  kafka_data:
+  airflow_logs:

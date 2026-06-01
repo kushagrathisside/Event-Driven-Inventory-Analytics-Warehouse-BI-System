@@ -1,0 +1,53 @@
+{
+  "topic": "sales_events",
+  "description": "Immutable sales events emitted by Sales service representing demand signals",
+  "key": "product_id",
+
+  "envelope": {
+    "event_id": "uuid",
+    "event_type": "string",
+    "event_time": "ISO-8601 UTC timestamp",
+    "producer": "sales_service",
+    "schema_version": 1
+  },
+
+  "event_types": {
+    "SALE_CREATED": {
+      "description": "A completed sale that reduces available inventory",
+      "payload": {
+        "sale_id": "uuid",
+        "product_id": "uuid",
+        "warehouse_id": "uuid",
+        "quantity": "positive integer (base units)",
+        "unit_price": "decimal",
+        "currency": "ISO-4217 code",
+        "customer_type": "RETAIL | HOSPITAL | DISTRIBUTOR"
+      }
+    },
+
+    "SALE_CANCELLED": {
+      "description": "Cancellation of a previously completed sale",
+      "payload": {
+        "sale_id": "uuid",
+        "product_id": "uuid",
+        "warehouse_id": "uuid",
+        "quantity": "positive integer (base units)",
+        "original_event_id": "uuid"
+      }
+    }
+  },
+
+  "schema_evolution_rules": {
+    "allowed": [
+      "Add new event types",
+      "Add optional pricing fields",
+      "Add new customer types"
+    ],
+    "forbidden": [
+      "Change quantity semantics",
+      "Remove sale_id or product_id",
+      "Change meaning of existing events"
+    ]
+  }
+}
+

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid-two">
+  <article class="panel">
+    <h3>Warehouse Overview</h3>
+    <div id="warehouseOverview" class="kv-list">
+      <div class="kv-row"><span>Reachable</span><code>{{ 'yes' if status.metrics.warehouse.reachable else 'no' }}</code></div>
+      <div class="kv-row"><span>Target</span><code>{{ status.metrics.warehouse.target }}</code></div>
+      <div class="kv-row"><span>Staging Rows</span><code>{{ status.metrics.warehouse.staging_count if status.metrics.warehouse.staging_count is not none else 'n/a' }}</code></div>
+      <div class="kv-row"><span>Fact Rows</span><code>{{ status.metrics.warehouse.fact_count if status.metrics.warehouse.fact_count is not none else 'n/a' }}</code></div>
+      <div class="kv-row"><span>Snapshot Rows</span><code>{{ status.metrics.warehouse.snapshot_count if status.metrics.warehouse.snapshot_count is not none else 'n/a' }}</code></div>
+      <div class="kv-row"><span>Schemas</span><code>{{ status.metrics.warehouse.schemas|join(', ') if status.metrics.warehouse.schemas else 'n/a' }}</code></div>
+      <div class="kv-row"><span>Roles</span><code>{{ status.metrics.warehouse.roles|join(', ') if status.metrics.warehouse.roles else 'unavailable' }}</code></div>
+    </div>
+    {% if not status.metrics.warehouse.reachable %}
+    <div class="note note-bad">{{ status.metrics.warehouse.error }}</div>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <h3>Schema Coverage</h3>
+    <div id="warehouseSchemaCoverage" class="kv-list">
+      <div class="kv-row"><span>Missing Tables</span><code>{{ status.metrics.warehouse.missing_tables|join(', ') if status.metrics.warehouse.missing_tables else 'none' }}</code></div>
+      <div class="kv-row"><span>Missing Views</span><code>{{ status.metrics.warehouse.missing_views|join(', ') if status.metrics.warehouse.missing_views else 'none' }}</code></div>
+      <div class="kv-row"><span>Detected Tables</span><code>{{ status.metrics.warehouse.present_tables|join(', ') if status.metrics.warehouse.present_tables else 'n/a' }}</code></div>
+      <div class="kv-row"><span>Detected Views</span><code>{{ status.metrics.warehouse.present_views|join(', ') if status.metrics.warehouse.present_views else 'n/a' }}</code></div>
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <h3>Quality Checks</h3>
+  <div id="warehouseQuality" class="stack">
+    {% if status.metrics.warehouse.quality_issues %}
+    {% for issue in status.metrics.warehouse.quality_issues %}
+    <div class="item-card">
+      <div class="row-spread">
+        <strong>{{ issue.issue_name }}</strong>
+        <span class="pill tone-{{ 'warning' if issue.issue_count else 'healthy' }}">{{ issue.issue_count }}</span>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="empty-state">No quality-check output was collected.</div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
+

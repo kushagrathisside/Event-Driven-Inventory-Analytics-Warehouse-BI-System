@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h3>Pipeline Stages</h3>
+      <p class="muted">The dashboard tracks data movement, freshness, and cross-stage consistency.</p>
+    </div>
+  </div>
+  <div id="pipelineStages" class="stage-grid">
+    {% for stage_name, stage in status.metrics.pipeline.items() if stage_name != 'consistency' %}
+    <article class="stage-card tone-{{ stage.status if stage.status is defined else 'neutral' }}">
+      <p class="eyebrow">{{ stage_name|capitalize }}</p>
+      <strong>
+        {% if stage_name == 'warehouse' %}
+          {{ stage.fact_count if stage.fact_count is not none else 'n/a' }}
+        {% else %}
+          {{ stage.count if stage.count is not none else 'n/a' }}
+        {% endif %}
+      </strong>
+      <p class="muted compact">Last update {{ stage.last_update or 'n/a' }}</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="grid-two">
+  <article class="panel">
+    <h3>Consistency Checks</h3>
+    <div id="pipelineConsistency" class="kv-list">
+      {% for key, value in status.metrics.pipeline.consistency.items() %}
+      <div class="kv-row"><span>{{ key|replace('_', ' ')|title }}</span><code>{{ value if value is not none else 'n/a' }}</code></div>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel">
+    <h3>Pipeline Alerts</h3>
+    <div id="pipelineAlerts" class="stack">
+      {% set pipeline_alerts = status.alerts.active | selectattr('source', 'in', ['pipeline', 'bronze', 'silver', 'warehouse']) | list %}
+      {% if pipeline_alerts %}
+      {% for alert in pipeline_alerts %}
+      <article class="alert-card severity-{{ alert.severity|lower }}">
+        <div class="row-spread">
+          <strong>{{ alert.name }}</strong>
+          <span class="pill tone-{{ alert.severity|lower }}">{{ alert.severity }}</span>
+        </div>
+        <p>{{ alert.message }}</p>
+      </article>
+      {% endfor %}
+      {% else %}
+      <div class="empty-state">No pipeline-specific alerts are active.</div>
+      {% endif %}
+    </div>
+  </article>
+</section>
+{% endblock %}
+

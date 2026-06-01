@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h3>Filesystem Artifacts</h3>
+      <p class="muted">Bronze, Silver, and Quarantine datasets are summarized independently of running jobs.</p>
+    </div>
+  </div>
+  <div id="artifactsGrid" class="grid-three">
+    {% for artifact_name, artifact in status.metrics.artifacts.items() %}
+    <article class="metric-card tall">
+      <div class="row-spread">
+        <strong>{{ artifact_name|capitalize }}</strong>
+        <span class="pill tone-{{ 'healthy' if artifact.exists else 'warning' }}">{{ 'present' if artifact.exists else 'missing' }}</span>
+      </div>
+      <div class="kv-list">
+        <div class="kv-row"><span>Parquet Files</span><code>{{ artifact.parquet_files }}</code></div>
+        <div class="kv-row"><span>Updated</span><code>{{ artifact.updated_at or 'n/a' }}</code></div>
+        <div class="kv-row"><span>Lag Seconds</span><code>{{ artifact.lag_seconds|int if artifact.lag_seconds is not none else 'n/a' }}</code></div>
+        <div class="kv-row"><span>Path</span><code>{{ artifact.path }}</code></div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
+

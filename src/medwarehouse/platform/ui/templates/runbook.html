@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid-two">
+  <article class="panel">
+    <h3>Recovery Priorities</h3>
+    <div class="stack">
+      <div class="item-card">
+        <strong>1. Restore infrastructure first</strong>
+        <p class="muted compact">If PostgreSQL or Kafka is down, recover those before starting Bronze, Silver, or warehouse jobs.</p>
+      </div>
+      <div class="item-card">
+        <strong>2. Check freshness before replaying work</strong>
+        <p class="muted compact">Use stage lag and artifact timestamps to see where the pipeline actually stopped moving.</p>
+      </div>
+      <div class="item-card">
+        <strong>3. Clear quality issues before publishing trust</strong>
+        <p class="muted compact">Non-zero quarantine or quality-check counts indicate correctness problems, not just execution problems.</p>
+      </div>
+      <div class="item-card">
+        <strong>4. Prefer bounded jobs for repair</strong>
+        <p class="muted compact">Run `inventory_silver`, `inventory_stage`, `load_inventory_facts`, and `refresh_views` in that order when catching up.</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h3>Live Guidance</h3>
+    <div id="runbookAlerts" class="stack">
+      {% if status.alerts.active %}
+      {% for alert in status.alerts.active %}
+      <article class="alert-card severity-{{ alert.severity|lower }}">
+        <div class="row-spread">
+          <strong>{{ alert.name }}</strong>
+          <span class="pill tone-{{ alert.severity|lower }}">{{ alert.severity }}</span>
+        </div>
+        <p>{{ alert.message }}</p>
+      </article>
+      {% endfor %}
+      {% else %}
+      <div class="empty-state">No active alerts. Use this page as an operational checklist when conditions change.</div>
+      {% endif %}
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <h3>Suggested Repair Flow</h3>
+  <ol class="ordered">
+    <li>Start local services if the infrastructure page reports Kafka or PostgreSQL as stopped.</li>
+    <li>Confirm the warehouse becomes reachable and the DAG file is still present.</li>
+    <li>Run or restart `Inventory Bronze Stream` only after Kafka is healthy.</li>
+    <li>Run `Inventory Silver Refresh` to validate and rewrite Silver outputs.</li>
+    <li>Run `Stage Inventory Events`, `Load Inventory Facts`, and `Refresh Semantic Views` to rebuild warehouse visibility.</li>
+    <li>Finish with `Quality Checks` and verify alert volume falls back to zero or expected noise.</li>
+  </ol>
+</section>
+{% endblock %}

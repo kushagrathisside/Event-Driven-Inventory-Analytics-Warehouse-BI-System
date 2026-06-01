@@ -1,0 +1,18 @@
+# Generated warehouse outputs
+**/*.parquet
+**/*.crc
+**/_SUCCESS
+
+# Spark structured streaming metadata and checkpoints
+/bronze/inventory_events/_spark_metadata/**
+/checkpoints/inventory_events/metadata
+/checkpoints/inventory_events/commits/**
+/checkpoints/inventory_events/offsets/**
+/checkpoints/inventory_events/sources/**
+
+# Local control-plane state
+/control_plane/*.sqlite3
+/control_plane/*.sqlite3-*
+
+# Keep placeholder .gitignore files so the directory structure stays in git
+!**/.gitignore

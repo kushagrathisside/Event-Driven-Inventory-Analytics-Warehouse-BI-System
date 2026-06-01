@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title }} | Medical Warehouse Control Plane</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='platform.css') }}">
+  </head>
+  <body data-page="{{ page_key }}">
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="eyebrow">Medical Warehouse</p>
+          <h1>Control Plane</h1>
+          <p class="muted">Operational monitoring dashboard for the local data platform.</p>
+        </div>
+
+        <nav class="nav">
+          <a href="{{ url_for('platform_pages.dashboard') }}" class="nav-link {% if page_key == 'dashboard' %}active{% endif %}">Dashboard</a>
+          <a href="{{ url_for('platform_pages.pipeline') }}" class="nav-link {% if page_key == 'pipeline' %}active{% endif %}">Pipeline</a>
+          <a href="{{ url_for('platform_pages.warehouse') }}" class="nav-link {% if page_key == 'warehouse' %}active{% endif %}">Warehouse</a>
+          <a href="{{ url_for('platform_pages.artifacts') }}" class="nav-link {% if page_key == 'artifacts' %}active{% endif %}">Artifacts</a>
+          <a href="{{ url_for('platform_pages.infrastructure') }}" class="nav-link {% if page_key == 'infrastructure' %}active{% endif %}">Infrastructure</a>
+          <a href="{{ url_for('platform_pages.jobs') }}" class="nav-link {% if page_key == 'jobs' %}active{% endif %}">Jobs</a>
+          <a href="{{ url_for('platform_pages.runbook') }}" class="nav-link {% if page_key == 'runbook' %}active{% endif %}">Runbook</a>
+        </nav>
+
+        <section class="sidebar-panel">
+          <p class="sidebar-label">Overall Health</p>
+          <span id="globalHealthBadge" class="pill tone-{{ status.health.status }}">{{ status.health.status }}</span>
+          <p id="globalHealthSummary" class="muted compact">{{ status.health.summary }}</p>
+        </section>
+
+        <section class="sidebar-panel">
+          <p class="sidebar-label">Alerts</p>
+          <div class="stack compact">
+            <div class="metric-inline">
+              <span>Active</span>
+              <strong id="globalAlertCount">{{ status.alerts.summary.total }}</strong>
+            </div>
+            <div class="metric-inline">
+              <span>Critical</span>
+              <strong id="globalCriticalCount">{{ status.alerts.summary.critical }}</strong>
+            </div>
+            <div class="metric-inline">
+              <span>Warnings</span>
+              <strong id="globalWarningCount">{{ status.alerts.summary.warning }}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="sidebar-panel">
+          <p class="sidebar-label">Snapshot</p>
+          <p id="globalGeneratedAt" class="muted compact">{{ status.generated_at }}</p>
+          <p class="muted compact">Cache TTL {{ status.cache.ttl_seconds | int }}s</p>
+        </section>
+      </aside>
+
+      <main class="content">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">{{ page_key|replace('_', ' ')|title }}</p>
+            <h2>{{ page_title }}</h2>
+            <p class="muted">{{ page_subtitle }}</p>
+          </div>
+          <div class="page-actions">
+            <button id="hardRefreshButton" class="button button-primary" type="button">Hard Refresh</button>
+            <span id="cacheStatus" class="pill tone-neutral">
+              {% if status.cache.served_from_cache %}cached{% else %}fresh{% endif %}
+            </span>
+          </div>
+        </header>
+
+        <section class="summary-grid">
+          <article class="summary-card">
+            <p class="summary-label">Bronze Freshness</p>
+            <strong id="summaryBronzeStatus">{{ status.metrics.pipeline.bronze.status }}</strong>
+            <p class="muted compact" id="summaryBronzeLag">{{ status.metrics.pipeline.bronze.lag_seconds or 'n/a' }}</p>
+          </article>
+          <article class="summary-card">
+            <p class="summary-label">Silver Quarantine</p>
+            <strong id="summaryQuarantine">{{ status.metrics.pipeline.silver.quarantine }}</strong>
+            <p class="muted compact">files awaiting review</p>
+          </article>
+          <article class="summary-card">
+            <p class="summary-label">Warehouse Fact Rows</p>
+            <strong id="summaryFactCount">{{ status.metrics.pipeline.warehouse.fact_count if status.metrics.pipeline.warehouse.fact_count is not none else 'n/a' }}</strong>
+            <p class="muted compact">{{ 'reachable' if status.metrics.pipeline.warehouse.reachable else 'unreachable' }}</p>
+          </article>
+          <article class="summary-card">
+            <p class="summary-label">Running Jobs</p>
+            <strong id="summaryRunningJobs">{{ status.metrics.jobs.running }}</strong>
+            <p class="muted compact">{{ status.metrics.jobs.failed }} failed or orphaned</p>
+          </article>
+        </section>
+
+        <div id="feedbackBanner" class="feedback hidden"></div>
+
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+
+    <script id="initial-status" type="application/json">{{ status | tojson }}</script>
+    <script src="{{ url_for('static', filename='platform.js') }}"></script>
+  </body>
+</html>
+
