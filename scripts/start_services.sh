@@ -1,215 +1,108 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# scripts/start_services.sh — start the medwarehouse Docker stack.
+#
+# Usage:
+#   ./scripts/start_services.sh [options]
+#
+# Options:
+#   --with-airflow   Also start Airflow (webserver + scheduler)
+#   --no-pull        Skip pulling images (faster on repeat runs)
+#   --help           Show this message
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
+# shellcheck source=lib/common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
-ENV_FILE="$ROOT_DIR/.env"
-ENV_EXAMPLE="$ROOT_DIR/.env.example"
+# ── Constants ─────────────────────────────────────────────────────────────────
+readonly CORE_SERVICES=(postgres zookeeper kafka)
+readonly AIRFLOW_SERVICES=(airflow-init airflow-webserver airflow-scheduler)
+readonly KAFKA_TOPICS=(inventory_events procurement_events sales_events)
 
-CORE_SERVICES=(
-  postgres
-  zookeeper
-  kafka
-)
-
-OPTIONAL_AIRFLOW_SERVICES=(
-  airflow-init
-  airflow-webserver
-  airflow-scheduler
-)
-
-REQUIRED_TOPICS=(
-  inventory_events
-  procurement_events
-  sales_events
-)
-
-log() {
-  printf '[medwarehouse] %s\n' "$1"
-}
-
-fail() {
-  printf '[medwarehouse] ERROR: %s\n' "$1" >&2
-  exit 1
-}
-
-require_command() {
-  command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
-}
-
-COMPOSE_CMD=()
-SERVICES_TO_START=()
+# ── Argument parsing ──────────────────────────────────────────────────────────
 START_AIRFLOW=0
+PULL_IMAGES=1
 
-detect_compose() {
-  local docker_compose_error=""
-  local legacy_compose_error=""
-
-  if command -v docker >/dev/null 2>&1; then
-    if docker compose version >/dev/null 2>&1; then
-      COMPOSE_CMD=(docker compose)
-      return 0
-    fi
-    docker_compose_error="$(docker compose version 2>&1 || true)"
-  fi
-
-  if command -v docker-compose >/dev/null 2>&1; then
-    if docker-compose version >/dev/null 2>&1; then
-      COMPOSE_CMD=(docker-compose)
-      return 0
-    fi
-    legacy_compose_error="$(docker-compose version 2>&1 || true)"
-  fi
-
-  fail "No usable Docker Compose command found.
-Tried:
-  - docker compose
-  - docker-compose
-
-docker compose output:
-${docker_compose_error:-not available}
-
-docker-compose output:
-${legacy_compose_error:-not available}"
+usage() {
+  grep '^#' "$0" | sed 's/^# \{0,1\}//'
+  exit 0
 }
 
-compose() {
-  "${COMPOSE_CMD[@]}" "$@"
-}
+for arg in "$@"; do
+  case "$arg" in
+    --with-airflow|--all) START_AIRFLOW=1 ;;
+    --core)               START_AIRFLOW=0 ;;
+    --no-pull)            PULL_IMAGES=0   ;;
+    --help|-h)            usage           ;;
+    *) fail "Unknown option: $arg  (run with --help for usage)" ;;
+  esac
+done
 
-parse_args() {
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --with-airflow|--all)
-        START_AIRFLOW=1
-        shift
-        ;;
-      --core)
-        START_AIRFLOW=0
-        shift
-        ;;
-      *)
-        fail "Unknown option: $1
-Supported options:
-  --core
-  --with-airflow"
-        ;;
-    esac
-  done
+SERVICES_TO_START=("${CORE_SERVICES[@]}")
+(( START_AIRFLOW )) && SERVICES_TO_START+=("${AIRFLOW_SERVICES[@]}")
 
-  SERVICES_TO_START=("${CORE_SERVICES[@]}")
-  if [[ "$START_AIRFLOW" -eq 1 ]]; then
-    SERVICES_TO_START+=("${OPTIONAL_AIRFLOW_SERVICES[@]}")
-  fi
-}
-
-ensure_env_file() {
-  if [[ ! -f "$ENV_FILE" ]]; then
-    cp "$ENV_EXAMPLE" "$ENV_FILE"
-    log "Created .env from .env.example"
-  fi
-}
-
-wait_for_kafka() {
-  local retries=30
-  local delay=2
-
-  log "Waiting for Kafka to accept connections..."
-  for ((i=1; i<=retries; i++)); do
-    if compose exec -T kafka kafka-topics \
-      --bootstrap-server kafka:29092 \
-      --list >/dev/null 2>&1; then
-      log "Kafka is ready"
-      return 0
-    fi
-    sleep "$delay"
-  done
-
-  fail "Kafka did not become ready in time"
-}
-
-create_topics() {
-  for topic in "${REQUIRED_TOPICS[@]}"; do
-    log "Ensuring Kafka topic exists: $topic"
-    compose exec -T kafka kafka-topics \
-      --bootstrap-server kafka:29092 \
-      --create \
-      --if-not-exists \
-      --topic "$topic" \
-      --partitions 1 \
-      --replication-factor 1 >/dev/null
-  done
-}
-
-pull_with_retries() {
-  local retries=3
-  local delay=5
-  local attempt=1
-
-  while (( attempt <= retries )); do
-    log "Pulling images (attempt ${attempt}/${retries})..."
-    if compose pull "${SERVICES_TO_START[@]}"; then
-      return 0
-    fi
-
-    if (( attempt == retries )); then
-      fail "Image pull failed after ${retries} attempts.
-This often happens because of a transient Docker registry/network issue such as a TLS handshake timeout.
-If you are behind a proxy:
-  1. Set HTTP_PROXY, HTTPS_PROXY, and NO_PROXY in .env
-  2. Configure the Docker daemon or Docker Desktop proxy settings as well
-
-Repo-level proxy settings help container builds and runtime, but Docker itself still needs direct proxy access to pull images from docker.io.
-Please retry in a few minutes, or verify Docker Desktop / internet connectivity."
-    fi
-
-    log "Pull failed. Retrying in ${delay}s..."
-    sleep "$delay"
-    attempt=$((attempt + 1))
-  done
-}
-
-show_next_steps() {
-  cat <<'EOF'
-
-[medwarehouse] Services are up.
-
-Next steps:
-  1. export PYTHONPATH=src
-  2. set -a && source .env && set +a
-  3. python -m medwarehouse warehouse bootstrap
-  4. python -m medwarehouse spark inventory-bronze
-  5. In another terminal:
-     python -m medwarehouse produce inventory --max-events 10
-     python -m medwarehouse spark inventory-silver
-     python -m medwarehouse orchestration build-gold
-  6. Optional control plane:
-     python -m medwarehouse platform serve --host 127.0.0.1 --port 8787
-  7. Optional Airflow stack:
-     ./scripts/start_services.sh --with-airflow
-
-Service endpoints:
-  - PostgreSQL: localhost:5432
-  - Kafka: localhost:9092
-  - Airflow: http://127.0.0.1:8080
-EOF
-}
-
+# ── Main ──────────────────────────────────────────────────────────────────────
 main() {
-  parse_args "$@"
+  header "MedWarehouse — Starting Services"
+
+  load_env
   detect_compose
+  cd "$MW_ROOT"
 
-  ensure_env_file
+  if (( PULL_IMAGES )); then
+    log "Pulling images (pass --no-pull to skip on repeat runs)..."
+    local pull_attempt=1
+    until compose pull "${SERVICES_TO_START[@]}"; do
+      (( pull_attempt++ ))
+      (( pull_attempt > 3 )) && fail "Image pull failed after 3 attempts.
+  If you are behind a proxy, set HTTP_PROXY / HTTPS_PROXY / NO_PROXY in .env
+  and also configure the Docker daemon proxy settings."
+      warn "Pull failed — retrying in 5s (attempt ${pull_attempt}/3)..."
+      sleep 5
+    done
+  fi
 
-  pull_with_retries
-
-  log "Starting services: ${SERVICES_TO_START[*]}"
+  log "Starting: ${SERVICES_TO_START[*]}"
   compose up -d "${SERVICES_TO_START[@]}"
 
-  wait_for_kafka
-  create_topics
-  show_next_steps
+  wait_for_kafka 180
+  ensure_kafka_topics "${KAFKA_TOPICS[@]}"
+
+  _show_next_steps
+}
+
+_show_next_steps() {
+  local endpoints=""
+  endpoints+="  PostgreSQL   localhost:5432\n"
+  endpoints+="  Kafka        localhost:9092\n"
+  (( START_AIRFLOW )) && endpoints+="  Airflow UI   http://127.0.0.1:8080  (admin / admin)\n"
+
+  printf "\n${_CLR_BOLD}${_CLR_GREEN}Services are up.${_CLR_RESET}\n\n"
+  printf "${_CLR_BOLD}Endpoints:${_CLR_RESET}\n%b\n" "$endpoints"
+  printf "${_CLR_BOLD}Next steps:${_CLR_RESET}\n"
+  cat <<'EOF'
+  # 1. Export Python path and load environment
+  export PYTHONPATH=src
+  set -a && source .env && set +a
+
+  # 2. Bootstrap the analytics warehouse (first time only)
+  python -m medwarehouse warehouse bootstrap
+
+  # 3. Run a domain pipeline end-to-end
+  ./scripts/run_inventory_flow.sh     # inventory
+  ./scripts/run_procurement_flow.sh   # procurement
+  ./scripts/run_sales_flow.sh         # sales
+
+  # 4. Start the monitoring platform
+  python -m medwarehouse platform serve --host 127.0.0.1 --port 8787
+
+  # 5. Start the operator webapp
+  python -m medwarehouse_webapp --host 127.0.0.1 --port 8080
+
+  # 6. Or run all three pipelines via Airflow
+  ./scripts/start_services.sh --with-airflow
+
+  # See docs/runbook.md for full operational guidance.
+EOF
 }
 
 main "$@"

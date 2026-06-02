@@ -7,31 +7,33 @@ from functools import lru_cache
 from pathlib import Path
 
 from medwarehouse.config import get_settings
+from medwarehouse.logging import get_logger
 from medwarehouse.platform.models import RunRecord, idle_infra_snapshot, idle_job_snapshot
-
 from medwarehouse.platform.control.catalog import JobSpec, get_job_spec, job_specs
 from medwarehouse.platform.control.runtime import ProcessSupervisor
 from medwarehouse.platform.control.store import ControlPlaneStore
 
 
+logger = get_logger(__name__)
+
+
 class ControlPlaneService:
-    def __init__(
-        self,
-        *,
-        store: ControlPlaneStore,
-        supervisor: ProcessSupervisor,
-    ) -> None:
+    def __init__(self, *, store: ControlPlaneStore, supervisor: ProcessSupervisor) -> None:
         self._store = store
         self._supervisor = supervisor
         self._lock = threading.Lock()
 
+    # ── Job operations ────────────────────────────────────────────────────────
+
     def start_job(self, job_id: str) -> tuple[bool, str]:
         spec = get_job_spec(job_id)
         if spec is None:
+            logger.warning("start_job: unknown job_id=%s", job_id)
             return False, f"Unknown job '{job_id}'."
 
         command = [sys.executable, "-m", "medwarehouse", *spec.command]
         command_display = "python -m medwarehouse " + " ".join(spec.command)
+        logger.info("start_job: job_id=%s command=%s", job_id, command_display)
         return self._start_command(
             kind="job",
             command_id=job_id,
@@ -50,11 +52,11 @@ class ControlPlaneService:
         spec = get_job_spec(job_id)
         if spec is None:
             return False, f"Unknown job '{job_id}'."
-
         with self._lock:
             run = self._store.get_active_run("job", job_id)
             if run is None:
                 return False, f"{spec.name} is not running."
+            logger.info("stop_job: job_id=%s run_id=%s", job_id, run.run_id[:8])
             return self._supervisor.request_stop(run.run_id)
 
     def job_snapshots(self) -> list[dict[str, object]]:
@@ -63,9 +65,8 @@ class ControlPlaneService:
             run = self._store.get_latest_run("job", spec.job_id)
             if run is None:
                 snapshots.append(self._idle_snapshot_for_job(spec))
-                continue
-            logs = self._store.get_run_logs(run.run_id, limit=200)
-            snapshots.append(run.to_job_snapshot(logs))
+            else:
+                snapshots.append(run.to_job_snapshot(self._store.get_run_logs(run.run_id, limit=200)))
         return snapshots
 
     def run_job_snapshot(self, job_id: str) -> dict[str, object] | None:
@@ -77,6 +78,8 @@ class ControlPlaneService:
             return self._idle_snapshot_for_job(spec)
         return run.to_job_snapshot(self._store.get_run_logs(run.run_id, limit=200))
 
+    # ── Infrastructure operations ─────────────────────────────────────────────
+
     def run_infra_action(self, action: str) -> tuple[bool, str]:
         if action not in {"start", "stop"}:
             return False, f"Unknown infra action '{action}'."
@@ -84,10 +87,20 @@ class ControlPlaneService:
         settings = get_settings()
         scripts = {
             "start": settings.paths.project_root / "scripts" / "start_services.sh",
-            "stop": settings.paths.project_root / "scripts" / "stop_services.sh",
+            "stop":  settings.paths.project_root / "scripts" / "stop_services.sh",
         }
-        command = [str(scripts[action])]
-        command_display = str(scripts[action])
+        script_path = scripts[action]
+
+        if not script_path.exists():
+            msg = f"Infrastructure script not found: {script_path}"
+            logger.error(msg)
+            return False, msg
+        if not os.access(script_path, os.X_OK):
+            msg = f"Infrastructure script is not executable: {script_path}"
+            logger.error(msg)
+            return False, msg
+
+        logger.info("run_infra_action: action=%s script=%s", action, script_path)
         return self._start_command(
             kind="infra",
             command_id=action,
@@ -96,8 +109,8 @@ class ControlPlaneService:
             stage="infrastructure",
             description=f"Run the infrastructure {action} script.",
             long_running=False,
-            command=command,
-            command_display=command_display,
+            command=[str(script_path)],
+            command_display=str(script_path),
             cwd=settings.paths.project_root,
             env=dict(os.environ),
         )
@@ -107,6 +120,8 @@ class ControlPlaneService:
         if run is None:
             return idle_infra_snapshot()
         return run.to_infra_snapshot(self._store.get_run_logs(run.run_id, limit=200))
+
+    # ── Internal ──────────────────────────────────────────────────────────────
 
     def _start_command(
         self,
@@ -173,6 +188,8 @@ class ControlPlaneService:
         )
 
 
+# ── Singletons ────────────────────────────────────────────────────────────────
+
 def _default_store_path() -> Path:
     settings = get_settings()
     override = os.environ.get("MW_CONTROL_PLANE_DB_PATH")
@@ -203,4 +220,3 @@ def reset_control_plane_services() -> None:
     get_control_plane_service.cache_clear()
     get_process_supervisor.cache_clear()
     get_control_plane_store.cache_clear()
-

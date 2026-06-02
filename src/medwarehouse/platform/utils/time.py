@@ -3,12 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 
-def now_utc() -> datetime:
+def _now_utc_dt() -> datetime:
+    """Internal helper returning a timezone-aware datetime. Use utc_now() for the public API."""
     return datetime.now(timezone.utc)
 
 
 def utc_now() -> str:
-    return now_utc().isoformat()
+    """Return the current UTC time as an ISO-8601 string."""
+    return _now_utc_dt().isoformat()
 
 
 def safe_isoformat(value: datetime | None) -> str | None:
@@ -36,6 +38,5 @@ def lag_seconds(value: str | None, *, reference: datetime | None = None) -> floa
     parsed = parse_timestamp(value)
     if parsed is None:
         return None
-    ref = reference or now_utc()
+    ref = reference or _now_utc_dt()
     return max(0.0, (ref - parsed).total_seconds())
-

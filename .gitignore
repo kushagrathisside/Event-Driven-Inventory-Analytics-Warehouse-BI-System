@@ -22,6 +22,8 @@ htmlcov/
 .codex/
 derby.log
 
+*.dump
+
 airflow/logs/
 airflow/dags/__pycache__/
 

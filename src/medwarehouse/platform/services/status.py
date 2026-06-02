@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import copy
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from typing import Any
 
 from medwarehouse.config import AppSettings, get_settings
+from medwarehouse.logging import get_logger
 from medwarehouse.platform.cache import TTLCache
 from medwarehouse.platform.control import (
     ControlPlaneService,
@@ -21,6 +23,9 @@ from medwarehouse.platform.probes import (
 )
 from medwarehouse.platform.services.alerts import AlertEngine, build_default_alert_engine
 from medwarehouse.platform.utils.time import lag_seconds, parse_timestamp, utc_now
+from medwarehouse.platform.utils.warehouse import collect_warehouse_state
+
+logger = get_logger(__name__)
 
 
 class StatusService:
@@ -88,11 +93,12 @@ class StatusService:
 
     def _build_full_status(self) -> dict[str, Any]:
         generated_at = utc_now()
-        probes = {name: probe.collect() for name, probe in self._probes.items()}
-        metrics = self._build_metrics(probes)
-        self._alert_engine.evaluate(metrics)
-        alerts = self._alert_engine.snapshot()
-        health = self._build_health(alerts)
+        probes   = self._collect_probes()
+        metrics  = self._build_metrics(probes)
+        alerts   = self._evaluate_alerts(metrics)
+        health   = self._build_health(alerts)
+        controls = self._build_controls(probes)
+        roles    = self._build_roles(probes)
 
         full_status = {
             "generated_at": generated_at,
@@ -100,26 +106,79 @@ class StatusService:
             "health": health,
             "environment": self._environment_payload(),
             "coverage": self._coverage_status(),
-            "roles": {
-                "configured": {
-                    "fdw_reader": self._settings.warehouse_roles.fdw_reader_user,
-                    "spark_writer": self._settings.warehouse_roles.spark_writer_user,
-                    "analytics_reader": self._settings.warehouse_roles.analytics_reader_user,
-                },
-                "detected": probes["warehouse"].get("roles", []),
-            },
+            "roles": roles,
             "orchestration": self._orchestration_payload(probes["airflow"]),
             "metrics": metrics,
             "alerts": alerts,
-            "controls": {
-                "jobs": probes["jobs"]["items"],
-                "infra": self._control_plane.infra_snapshot(),
-            },
+            "controls": controls,
             "catalog": {"jobs": self._configured_jobs()},
             "probes": probes,
         }
         full_status["legacy"] = {"snapshot": self._legacy_snapshot(full_status)}
         return full_status
+
+    def _collect_probes(self) -> dict[str, Any]:
+        # Pre-fetch warehouse state once so both PipelineProbe and WarehouseProbe share
+        # a single DB roundtrip instead of each issuing their own query.
+        warehouse_state: dict[str, Any] | None = None
+        try:
+            warehouse_state = collect_warehouse_state(settings=self._settings)
+        except Exception as exc:
+            logger.debug("Pre-fetch warehouse state failed; probes will query independently: %s", exc)
+
+        def _collect_warehouse() -> dict[str, Any]:
+            if warehouse_state is not None:
+                payload = dict(warehouse_state)
+                payload["status"] = "ok" if payload.get("reachable") else "warning"
+                return payload
+            return self._probes["warehouse"].collect()
+
+        def _collect_pipeline() -> dict[str, Any]:
+            pipeline_probe = self._probes["pipeline"]
+            if warehouse_state is not None and hasattr(pipeline_probe, "collect_with_warehouse"):
+                return pipeline_probe.collect_with_warehouse(warehouse_state)
+            return pipeline_probe.collect()
+
+        collectors: dict[str, Any] = {
+            "infra":      self._probes["infra"].collect,
+            "warehouse":  _collect_warehouse,
+            "pipeline":   _collect_pipeline,
+            "artifacts":  self._probes["artifacts"].collect,
+            "jobs":       self._probes["jobs"].collect,
+            "airflow":    self._probes["airflow"].collect,
+        }
+
+        results: dict[str, Any] = {}
+        with ThreadPoolExecutor(max_workers=len(collectors), thread_name_prefix="probe") as executor:
+            future_to_name = {executor.submit(fn): name for name, fn in collectors.items()}
+            for future in as_completed(future_to_name):
+                name = future_to_name[future]
+                try:
+                    results[name] = future.result()
+                except Exception as exc:
+                    logger.error("Probe %s raised an unhandled exception: %s", name, exc)
+                    results[name] = {"probe": name, "status": "error", "error": str(exc)}
+        return results
+
+    def _evaluate_alerts(self, metrics: dict[str, Any]) -> dict[str, Any]:
+        self._alert_engine.evaluate(metrics)
+        return self._alert_engine.snapshot()
+
+    def _build_controls(self, probes: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "jobs": probes["jobs"]["items"],
+            "infra": self._control_plane.infra_snapshot(),
+        }
+
+    def _build_roles(self, probes: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "configured": {
+                "fdw_reader":       self._settings.warehouse_roles.fdw_reader_user,
+                "spark_writer":     self._settings.analytics_writer_db.user,
+                "analytics_reader": self._settings.analytics_reader_db.user,
+            },
+            "detected": probes["warehouse"].get("roles", []),
+        }
 
     def _build_metrics(self, probes: dict[str, dict[str, Any]]) -> dict[str, Any]:
         pipeline_probe = probes["pipeline"]
@@ -299,17 +358,26 @@ class StatusService:
             {
                 "domain": "inventory",
                 "coverage": "End-to-end implemented",
-                "details": "Producer, Bronze, Silver, staging, warehouse facts/views, and Airflow DAG exist.",
+                "details": (
+                    "Producer, Bronze, Silver, staging, warehouse facts/views, "
+                    "SCD-2 dimensions, reorder automation, and Airflow DAG are all implemented."
+                ),
             },
             {
                 "domain": "procurement",
-                "coverage": "Producer only",
-                "details": "Producer exists, but no Bronze/Silver/warehouse pipeline is implemented yet.",
+                "coverage": "End-to-end implemented",
+                "details": (
+                    "Producer, Bronze, Silver, staging, warehouse facts/views, "
+                    "PO lifecycle view, supplier performance view, and Airflow DAG are all implemented."
+                ),
             },
             {
                 "domain": "sales",
-                "coverage": "Producer only",
-                "details": "Producer exists, but no Bronze/Silver/warehouse pipeline is implemented yet.",
+                "coverage": "End-to-end implemented",
+                "details": (
+                    "Producer, Bronze, Silver, staging, warehouse facts/views, "
+                    "revenue summary view, and Airflow DAG are all implemented."
+                ),
             },
         ]
 

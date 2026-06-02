@@ -1,59 +1,133 @@
-# Target Architecture
+# Architecture
 
-## HLD
+## System Overview
 
-The codebase is organized around five layers:
+MedWarehouse is an event-driven analytical warehouse for a medical/pharmaceutical operation. Business events produced by an operator webapp or sample producers flow through a three-stage Spark pipeline (Bronze → Silver → Gold) into a PostgreSQL analytical warehouse. Nine analytical domains are served to Power BI and to the operator webapp via a REST API.
 
-1. **Source**
-   - `medwarehouse_master` remains the operational source.
-   - `medwarehouse_analytics` hosts the analytical warehouse.
-   - PostgreSQL FDW exposes selected operational tables into the `master` schema inside the analytics database.
+---
 
-2. **Ingestion**
-   - Kafka topics carry immutable business events keyed by business identifiers.
-   - Producers emit deterministic local sample data for repeatable development runs.
+## Layer Map
 
-3. **Processing**
-   - Bronze stores raw Kafka payloads and metadata append-only.
-   - Silver parses, validates, deduplicates, and quarantines invalid records.
-   - Spark Gold does not publish BI-facing balance tables; it only stages warehouse-ready inventory events.
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Operator Webapp (port 8080)                                     │
+│  Stock entry, reorder policies, purchase order management        │
+└────────────────────┬─────────────────────────────────────────────┘
+                     │ writes to master DB + emits Kafka events
+                     │ triggers pipeline via POST /api/jobs/build_*/start
+                     ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  medwarehouse_master (PostgreSQL OLTP)                           │
+│  products, suppliers, warehouse_locations, inventory_lots,       │
+│  stock_adjustments, purchase_orders, goods_receipts, sales,      │
+│  prescriptions, customers, users, payments, audit_logs           │
+└──────────┬───────────────────────────────────────────────────────┘
+           │ FDW (read-only) → master schema in analytics DB
+           │
+┌──────────▼───────────────────────────────────────────────────────┐
+│  Kafka Topics                                                    │
+│  inventory_events  •  procurement_events  •  sales_events       │
+└──────────┬───────────────────────────────────────────────────────┘
+           │ PySpark Structured Streaming
+           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Bronze Layer (Parquet, immutable, append-only)                  │
+│  data/bronze/{inventory,procurement,sales}_events/               │
+└──────────┬───────────────────────────────────────────────────────┘
+           │ PySpark batch (validate, deduplicate, quarantine)
+           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Silver Layer (Parquet, validated + deduped events)              │
+│  data/silver/{inventory,procurement,sales}_events/               │
+│  data/quarantine/{inventory,procurement,sales}_events/           │
+└──────────┬───────────────────────────────────────────────────────┘
+           │ PySpark JDBC write (truncate-and-load)
+           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  medwarehouse_analytics (PostgreSQL)                             │
+│                                                                  │
+│  Staging: stg_inventory_events / stg_procurement_events /        │
+│           stg_sales_events                                       │
+│                                                                  │
+│  Dimensions (SCD Type 2):                                        │
+│    dim_product  dim_supplier  dim_warehouse  dim_customer        │
+│                                                                  │
+│  Facts (partitioned by event_time):                              │
+│    fact_inventory_events   fact_procurement_events               │
+│    fact_sales_events                                             │
+│                                                                  │
+│  Operational: fact_inventory_balance  reorder_policies           │
+│               pending_purchase_orders                            │
+│                                                                  │
+│  Semantic views (inventory, procurement, sales, compliance ...)  │
+│  See data-dictionary.md for full view listing.                   │
+└──────────┬───────────────────────────────────────────────────────┘
+           │ analytics_reader role
+           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Power BI  /  Monitoring Platform (port 8787)                    │
+└──────────────────────────────────────────────────────────────────┘
+```
 
-4. **Warehouse**
-   - `analytics.dim_product`, `analytics.dim_supplier`, and `analytics.dim_warehouse` are SCD Type-2 dimensions.
-   - `analytics.fact_inventory_events` is append-only and partitioned by `event_time`.
-   - `analytics.v_inventory_balance` and `analytics.v_inventory_snapshot` are the public analytical interfaces.
+---
 
-5. **Consumption**
-   - Airflow orchestrates the warehouse build.
-   - Power BI reads only curated semantic views and current-dimension views.
+## Kafka Domain Pipelines
 
-## LLD
+Three complete Bronze → Silver → Gold pipelines, each independently orchestrated:
 
-### Canonical package
+| Domain | Topic | Event Types | Fact Table |
+|---|---|---|---|
+| Inventory | `inventory_events` | STOCK_RECEIVED, STOCK_SOLD, STOCK_ADJUSTED, STOCK_EXPIRED | `fact_inventory_events` |
+| Procurement | `procurement_events` | PO_CREATED, PO_APPROVED, PO_RECEIVED, PO_CANCELLED | `fact_procurement_events` |
+| Sales | `sales_events` | SALE_CREATED, SALE_CANCELLED | `fact_sales_events` |
 
-- `medwarehouse.config` loads all runtime configuration from environment variables.
-- `medwarehouse.cli` exposes one command surface for producers, Spark jobs, and warehouse operations.
-- `medwarehouse.contracts.inventory` defines the shared event envelope and local deterministic sample generation.
-- `medwarehouse.spark.jobs.*` contains the only canonical Spark implementations.
-- `medwarehouse.warehouse.*` applies SQL, validates datasets, and executes warehouse load steps.
+Each domain has: a Kafka schema, a Python contract, a Kafka producer, three Spark jobs (Bronze/Silver/Stage), a warehouse module, and an Airflow DAG.
 
-### Inventory data flow
+---
 
-1. `produce inventory`
-2. `spark inventory-bronze`
-3. `spark inventory-silver`
-4. `spark stage-inventory-events`
-5. `warehouse refresh-dimensions`
-6. `warehouse load-facts`
-7. `warehouse refresh-views`
-8. `warehouse quality-checks`
+## Analytical Domains (FDW-backed)
 
-### Security model
+Six additional domains read directly from the OLTP database via PostgreSQL FDW. No Spark pipeline.
 
-- `spark_writer`
-  - direct write access only to warehouse staging tables
-  - execute permission on curated warehouse procedures
-- `analytics_reader`
-  - read-only access to curated semantic views
-- `fdw_reader`
-  - FDW-backed access path for operational source ingestion inside the analytics database
+| Domain | Key Views |
+|---|---|
+| Prescriptions / Compliance | v_controlled_substance_register, v_prescription_compliance_violations |
+| Supplier Management | v_supplier_license_expiry, v_supplier_directory |
+| Financial / AP-AR | v_accounts_payable, v_daily_collections |
+| Customer Analytics | v_customer_summary |
+| Audit / Compliance | v_audit_activity, v_recalled_product_sales |
+| Staff Performance | v_staff_performance, v_inactive_user_accounts |
+
+---
+
+## Security Model
+
+Four PostgreSQL roles enforcing least-privilege. API key auth (`X-API-Key` header) on both Flask services. See `docs/security.md` for full details.
+
+---
+
+## Package Structure
+
+```
+src/medwarehouse/
+├── contracts/_utils.py           # Shared: deterministic_uuid, to_utc_iso
+├── producers/common.py           # Shared: emit_events(), run_producer()
+├── spark/jobs/_bronze.py         # Shared: run_bronze_ingestion()
+│              _silver.py         # Shared: split_silver_quarantine()
+│              _stage.py          # Shared: write_to_staging()
+└── warehouse/_common.py          # Shared: validate_silver_ready(), call_warehouse_function()
+
+src/medwarehouse_webapp/           # Flask operator webapp (port 8080)
+```
+
+---
+
+## Orchestration
+
+Three Airflow DAGs (`schedule=None`). All can also be run via CLI or the monitoring platform job runner.
+
+**inventory_gold_pipeline** (8 tasks): validate → stage → dims → facts → views → quality → balance → reorders
+
+**procurement_gold_pipeline** (6 tasks): validate → stage → dims → facts → views → quality
+
+**sales_gold_pipeline** (6 tasks): validate → stage → dims → facts → views → quality

@@ -3,8 +3,6 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 
-from medwarehouse.config import get_settings
-
 
 @dataclass(frozen=True)
 class ComposeResolution:
@@ -15,9 +13,9 @@ class ComposeResolution:
 
 def _run_version_check(base_command: tuple[str, ...]) -> tuple[bool, str]:
     try:
+        # No cwd needed — `docker compose version` is not project-specific.
         result = subprocess.run(
             [*base_command, "version"],
-            cwd=str(get_settings().paths.project_root),
             check=True,
             capture_output=True,
             text=True,

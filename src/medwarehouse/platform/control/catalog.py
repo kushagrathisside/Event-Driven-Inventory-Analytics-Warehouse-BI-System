@@ -98,29 +98,98 @@ JOB_SPECS: tuple[JobSpec, ...] = (
         command=("orchestration", "build-gold"),
     ),
     JobSpec(
+        job_id="refresh_balance",
+        name="Refresh Balance Snapshot",
+        domain="inventory",
+        stage="warehouse",
+        description="Merge v_inventory_balance into fact_inventory_balance for fast BI queries.",
+        command=("warehouse", "refresh-balance"),
+    ),
+    JobSpec(
+        job_id="check_reorders",
+        name="Check Reorder Thresholds",
+        domain="inventory",
+        stage="automation",
+        description="Compare current stock against reorder policies and create draft purchase orders.",
+        command=("warehouse", "check-reorders"),
+    ),
+    # ── Procurement domain ──────────────────────────────────────────────────
+    JobSpec(
         job_id="procurement_producer",
         name="Procurement Producer",
         domain="procurement",
         stage="producer",
-        description="Emit procurement sample events. Downstream pipeline not implemented yet.",
-        command=("produce", "procurement", "--max-events", "10", "--dry-run"),
+        description="Emit sample procurement lifecycle events (PO_CREATED → PO_APPROVED → PO_RECEIVED).",
+        command=("produce", "procurement", "--max-events", "10"),
     ),
+    JobSpec(
+        job_id="procurement_bronze",
+        name="Procurement Bronze Stream",
+        domain="procurement",
+        stage="bronze",
+        description="Continuously ingest Kafka procurement events into immutable Parquet.",
+        command=("spark", "procurement-bronze"),
+        long_running=True,
+    ),
+    JobSpec(
+        job_id="procurement_silver",
+        name="Procurement Silver Refresh",
+        domain="procurement",
+        stage="silver",
+        description="Validate, normalize, deduplicate, and quarantine procurement events.",
+        command=("spark", "procurement-silver"),
+    ),
+    JobSpec(
+        job_id="build_procurement_gold",
+        name="Build Procurement Gold",
+        domain="procurement",
+        stage="orchestration",
+        description="Stage procurement events, load facts, refresh views, and validate quality.",
+        command=("orchestration", "build-procurement-gold"),
+    ),
+    # ── Sales domain ─────────────────────────────────────────────────────────
     JobSpec(
         job_id="sales_producer",
         name="Sales Producer",
         domain="sales",
         stage="producer",
-        description="Emit sales sample events. Downstream pipeline not implemented yet.",
-        command=("produce", "sales", "--max-events", "10", "--dry-run"),
+        description="Emit sample sales events (SALE_CREATED with periodic SALE_CANCELLED).",
+        command=("produce", "sales", "--max-events", "10"),
+    ),
+    JobSpec(
+        job_id="sales_bronze",
+        name="Sales Bronze Stream",
+        domain="sales",
+        stage="bronze",
+        description="Continuously ingest Kafka sales events into immutable Parquet.",
+        command=("spark", "sales-bronze"),
+        long_running=True,
+    ),
+    JobSpec(
+        job_id="sales_silver",
+        name="Sales Silver Refresh",
+        domain="sales",
+        stage="silver",
+        description="Validate, normalize, deduplicate, and quarantine sales events.",
+        command=("spark", "sales-silver"),
+    ),
+    JobSpec(
+        job_id="build_sales_gold",
+        name="Build Sales Gold",
+        domain="sales",
+        stage="orchestration",
+        description="Stage sales events, refresh dimensions, load facts, refresh views, and validate quality.",
+        command=("orchestration", "build-sales-gold"),
     ),
 )
 
 
+# Module-level dict for O(1) lookup — JOB_SPECS is populated before this line.
+_JOB_SPEC_MAP: dict[str, JobSpec] = {spec.job_id: spec for spec in JOB_SPECS}
+
+
 def get_job_spec(job_id: str) -> JobSpec | None:
-    for spec in JOB_SPECS:
-        if spec.job_id == job_id:
-            return spec
-    return None
+    return _JOB_SPEC_MAP.get(job_id)
 
 
 def group_jobs_by_stage() -> dict[str, list[JobSpec]]:

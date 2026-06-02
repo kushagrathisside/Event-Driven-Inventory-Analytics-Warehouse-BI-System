@@ -4,26 +4,7 @@ import argparse
 
 from medwarehouse.config import get_settings
 from medwarehouse.logging import configure_logging
-from medwarehouse.platform import run_platform_server
-from medwarehouse.producers import (
-    run_inventory_producer,
-    run_procurement_producer,
-    run_sales_producer,
-)
-from medwarehouse.spark.jobs import (
-    run_inventory_bronze,
-    run_inventory_event_staging,
-    run_inventory_silver,
-)
-from medwarehouse.warehouse.inventory import (
-    bootstrap_warehouse,
-    build_inventory_gold,
-    load_inventory_event_facts,
-    refresh_inventory_dimensions,
-    refresh_inventory_semantic_views,
-    run_inventory_quality_checks,
-    validate_inventory_silver_ready,
-)
+from medwarehouse.platform.app import run_platform_server
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -40,27 +21,54 @@ def _build_parser() -> argparse.ArgumentParser:
 
     spark = subparsers.add_parser("spark")
     spark_sub = spark.add_subparsers(dest="spark_job", required=True)
-    bronze = spark_sub.add_parser("inventory-bronze")
-    bronze.add_argument("--starting-offsets", default="earliest")
-    spark_sub.add_parser("inventory-silver")
-    spark_sub.add_parser("stage-inventory-events")
+    for bronze_cmd in ("inventory-bronze", "procurement-bronze", "sales-bronze"):
+        b = spark_sub.add_parser(bronze_cmd)
+        b.add_argument("--starting-offsets", default="earliest")
+    for silver_cmd in ("inventory-silver", "procurement-silver", "sales-silver",
+                       "stage-inventory-events", "stage-procurement-events", "stage-sales-events"):
+        spark_sub.add_parser(silver_cmd)
 
     warehouse = subparsers.add_parser("warehouse")
     warehouse_sub = warehouse.add_subparsers(dest="warehouse_command", required=True)
-    warehouse_sub.add_parser("bootstrap")
-    warehouse_sub.add_parser("refresh-dimensions")
-    warehouse_sub.add_parser("load-facts")
-    warehouse_sub.add_parser("refresh-views")
-    warehouse_sub.add_parser("quality-checks")
-    warehouse_sub.add_parser("inventory-gold")
+    for wh_cmd in (
+        "bootstrap",
+        "refresh-dimensions",
+        "load-facts",
+        "refresh-views",
+        "quality-checks",
+        "inventory-gold",
+        "refresh-balance",
+        "check-reorders",
+        # Procurement
+        "load-procurement-facts",
+        "refresh-procurement-views",
+        "procurement-quality-checks",
+        "procurement-gold",
+        # Sales
+        "refresh-sales-dimensions",
+        "load-sales-facts",
+        "refresh-sales-views",
+        "sales-quality-checks",
+        "sales-gold",
+    ):
+        warehouse_sub.add_parser(wh_cmd)
 
     orchestration = subparsers.add_parser("orchestration")
     orchestration_sub = orchestration.add_subparsers(
         dest="orchestration_command", required=True
     )
-    orchestration_sub.add_parser("validate-silver")
-    orchestration_sub.add_parser("stage-events")
-    orchestration_sub.add_parser("build-gold")
+    for orch_cmd in (
+        "validate-silver",
+        "stage-events",
+        "build-gold",
+        "validate-procurement-silver",
+        "stage-procurement-events",
+        "build-procurement-gold",
+        "validate-sales-silver",
+        "stage-sales-events",
+        "build-sales-gold",
+    ):
+        orchestration_sub.add_parser(orch_cmd)
 
     platform = subparsers.add_parser("platform")
     platform_sub = platform.add_subparsers(dest="platform_command", required=True)
@@ -78,6 +86,10 @@ def main(argv: list[str] | None = None) -> int:
     get_settings()
 
     if args.command == "produce":
+        from medwarehouse.producers.inventory import run_inventory_producer
+        from medwarehouse.producers.procurement import run_procurement_producer
+        from medwarehouse.producers.sales import run_sales_producer
+
         if args.producer_name == "inventory":
             run_inventory_producer(max_events=args.max_events, dry_run=args.dry_run)
         elif args.producer_name == "procurement":
@@ -87,30 +99,91 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "spark":
+        from medwarehouse.spark.jobs.inventory_bronze import run_inventory_bronze
+        from medwarehouse.spark.jobs.inventory_silver import run_inventory_silver
+        from medwarehouse.spark.jobs.inventory_stage import run_inventory_event_staging
+        from medwarehouse.spark.jobs.procurement_bronze import run_procurement_bronze
+        from medwarehouse.spark.jobs.procurement_silver import run_procurement_silver
+        from medwarehouse.spark.jobs.procurement_stage import run_procurement_event_staging
+        from medwarehouse.spark.jobs.sales_bronze import run_sales_bronze
+        from medwarehouse.spark.jobs.sales_silver import run_sales_silver
+        from medwarehouse.spark.jobs.sales_stage import run_sales_event_staging
+
         if args.spark_job == "inventory-bronze":
             run_inventory_bronze(starting_offsets=args.starting_offsets)
         elif args.spark_job == "inventory-silver":
             run_inventory_silver()
         elif args.spark_job == "stage-inventory-events":
             run_inventory_event_staging()
+        elif args.spark_job == "procurement-bronze":
+            run_procurement_bronze(starting_offsets=args.starting_offsets)
+        elif args.spark_job == "procurement-silver":
+            run_procurement_silver()
+        elif args.spark_job == "stage-procurement-events":
+            run_procurement_event_staging()
+        elif args.spark_job == "sales-bronze":
+            run_sales_bronze(starting_offsets=args.starting_offsets)
+        elif args.spark_job == "sales-silver":
+            run_sales_silver()
+        elif args.spark_job == "stage-sales-events":
+            run_sales_event_staging()
         return 0
 
     if args.command == "warehouse":
-        if args.warehouse_command == "bootstrap":
-            bootstrap_warehouse()
-        elif args.warehouse_command == "refresh-dimensions":
-            refresh_inventory_dimensions()
-        elif args.warehouse_command == "load-facts":
-            load_inventory_event_facts()
-        elif args.warehouse_command == "refresh-views":
-            refresh_inventory_semantic_views()
-        elif args.warehouse_command == "quality-checks":
-            run_inventory_quality_checks()
-        elif args.warehouse_command == "inventory-gold":
-            build_inventory_gold()
+        from medwarehouse.warehouse.inventory import (
+            bootstrap_warehouse, build_inventory_gold, check_reorder_thresholds,
+            load_inventory_event_facts, refresh_inventory_balance,
+            refresh_inventory_dimensions, refresh_inventory_semantic_views,
+            run_inventory_quality_checks,
+        )
+        from medwarehouse.warehouse.procurement import (
+            build_procurement_gold, load_procurement_event_facts,
+            refresh_procurement_semantic_views, run_procurement_quality_checks,
+        )
+        from medwarehouse.warehouse.sales import (
+            build_sales_gold, load_sales_event_facts, refresh_sales_dimensions,
+            refresh_sales_semantic_views, run_sales_quality_checks,
+        )
+
+        _warehouse_dispatch = {
+            "bootstrap":                    bootstrap_warehouse,
+            "refresh-dimensions":           refresh_inventory_dimensions,
+            "load-facts":                   load_inventory_event_facts,
+            "refresh-views":                refresh_inventory_semantic_views,
+            "quality-checks":               run_inventory_quality_checks,
+            "refresh-balance":              refresh_inventory_balance,
+            "check-reorders":               check_reorder_thresholds,
+            "inventory-gold":               build_inventory_gold,
+            "load-procurement-facts":       load_procurement_event_facts,
+            "refresh-procurement-views":    refresh_procurement_semantic_views,
+            "procurement-quality-checks":   run_procurement_quality_checks,
+            "procurement-gold":             build_procurement_gold,
+            "refresh-sales-dimensions":     refresh_sales_dimensions,
+            "load-sales-facts":             load_sales_event_facts,
+            "refresh-sales-views":          refresh_sales_semantic_views,
+            "sales-quality-checks":         run_sales_quality_checks,
+            "sales-gold":                   build_sales_gold,
+        }
+        _warehouse_dispatch[args.warehouse_command]()
         return 0
 
     if args.command == "orchestration":
+        from medwarehouse.spark.jobs.inventory_stage import run_inventory_event_staging
+        from medwarehouse.spark.jobs.procurement_stage import run_procurement_event_staging
+        from medwarehouse.spark.jobs.sales_stage import run_sales_event_staging
+        from medwarehouse.warehouse.inventory import (
+            build_inventory_gold,
+            validate_inventory_silver_ready,
+        )
+        from medwarehouse.warehouse.procurement import (
+            build_procurement_gold,
+            validate_procurement_silver_ready,
+        )
+        from medwarehouse.warehouse.sales import (
+            build_sales_gold,
+            validate_sales_silver_ready,
+        )
+
         if args.orchestration_command == "validate-silver":
             validate_inventory_silver_ready()
         elif args.orchestration_command == "stage-events":
@@ -120,6 +193,24 @@ def main(argv: list[str] | None = None) -> int:
             validate_inventory_silver_ready()
             run_inventory_event_staging()
             build_inventory_gold()
+        elif args.orchestration_command == "validate-procurement-silver":
+            validate_procurement_silver_ready()
+        elif args.orchestration_command == "stage-procurement-events":
+            validate_procurement_silver_ready()
+            run_procurement_event_staging()
+        elif args.orchestration_command == "build-procurement-gold":
+            validate_procurement_silver_ready()
+            run_procurement_event_staging()
+            build_procurement_gold()
+        elif args.orchestration_command == "validate-sales-silver":
+            validate_sales_silver_ready()
+        elif args.orchestration_command == "stage-sales-events":
+            validate_sales_silver_ready()
+            run_sales_event_staging()
+        elif args.orchestration_command == "build-sales-gold":
+            validate_sales_silver_ready()
+            run_sales_event_staging()
+            build_sales_gold()
         return 0
 
     if args.command == "platform":

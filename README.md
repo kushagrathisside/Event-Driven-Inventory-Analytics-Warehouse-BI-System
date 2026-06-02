@@ -94,7 +94,7 @@ The Silver job enforces these rules per event; failures go to the Quarantine dat
 - `product_id`, `warehouse_id`, `batch_number`, `quantity_delta` must be non-null
 - `expiry_date` required for `STOCK_RECEIVED`, `STOCK_SOLD`, `STOCK_EXPIRED`
 - `STOCK_RECEIVED` quantity must be positive; `STOCK_SOLD` and `STOCK_EXPIRED` must be negative
-- `STOCK_ADJUSTED` quantity must be non-zero and must carry an `adjustment_reason`
+- `STOCK_ADJUSTED` quantity must be non-zero and must carry a `reason` (stored as `adjustment_reason` in the warehouse)
 - `STOCK_SOLD` must carry a `sale_id`
 - Duplicate `event_id` values are quarantined (lowest-offset/latest-timestamp wins)
 

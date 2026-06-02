@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
+
+_WEAK_PASSWORDS = frozenset({
+    "postgres", "admin", "password", "secret",
+    "spark_writer_pwd", "analytics_reader_pwd", "fdw_reader_pwd", "airflow",
+})
 
 
 def _repo_root() -> Path:
@@ -66,35 +74,52 @@ class PathSettings:
     data_root: Path
     schemas_root: Path
     sql_root: Path
+    # Inventory domain paths
     bronze_inventory_path: Path
     silver_inventory_path: Path
     quarantine_inventory_path: Path
     inventory_checkpoint_path: Path
+    # Procurement domain paths
+    bronze_procurement_path: Path
+    silver_procurement_path: Path
+    quarantine_procurement_path: Path
+    procurement_checkpoint_path: Path
+    # Sales domain paths
+    bronze_sales_path: Path
+    silver_sales_path: Path
+    quarantine_sales_path: Path
+    sales_checkpoint_path: Path
 
 
 @dataclass(frozen=True)
 class ProducerSettings:
+    """Runtime controls for Kafka producers (interval, count, dry-run)."""
     interval_seconds: int
     max_events: int
     dry_run: bool
-    inventory_seed: str
-    inventory_start_time: str
-    sample_product_id: str
-    sample_warehouse_id: str
-    sample_supplier_id: str
-    sample_batch_number: str
-    sample_expiry_date: str
-    sample_currency: str
+
+
+@dataclass(frozen=True)
+class SampleDataSettings:
+    """
+    Deterministic sample data used by the sample generators and the operator webapp's
+    event-ID seeding. These values are never used in production pipelines.
+    """
+    seed: str
+    start_time: str
+    product_id: str
+    warehouse_id: str
+    supplier_id: str
+    batch_number: str
+    expiry_date: str
+    currency: str
 
 
 @dataclass(frozen=True)
 class WarehouseRoleSettings:
+    """Credentials for roles that do not already have a dedicated PostgresConnection."""
     fdw_reader_user: str
     fdw_reader_password: str
-    spark_writer_user: str
-    spark_writer_password: str
-    analytics_reader_user: str
-    analytics_reader_password: str
     fdw_remote_user: str
     fdw_remote_password: str
 
@@ -106,11 +131,14 @@ class AppSettings:
     kafka: KafkaSettings
     spark: SparkSettings
     producer: ProducerSettings
+    sample_data: SampleDataSettings
     master_db: PostgresConnection
     analytics_admin_db: PostgresConnection
     analytics_writer_db: PostgresConnection
     analytics_reader_db: PostgresConnection
     warehouse_roles: WarehouseRoleSettings
+    webapp_api_key: str | None = None
+    platform_api_key: str | None = None
 
 
 def _build_connection(
@@ -135,6 +163,7 @@ def _build_connection(
 @lru_cache(maxsize=1)
 def get_settings() -> AppSettings:
     env = dict(os.environ)
+    # _warn_weak_credentials is called at the end of this function
     project_root = Path(_get_str(env, "MW_PROJECT_ROOT", str(_repo_root()))).resolve()
     data_root = Path(_get_str(env, "MW_DATA_ROOT", str(project_root / "data"))).resolve()
     schemas_root = Path(
@@ -187,18 +216,12 @@ def get_settings() -> AppSettings:
 
     warehouse_roles = WarehouseRoleSettings(
         fdw_reader_user=_get_str(env, "MW_ANALYTICS_FDW_READER_USER", "fdw_reader"),
-        fdw_reader_password=_get_str(
-            env, "MW_ANALYTICS_FDW_READER_PASSWORD", "fdw_reader_pwd"
-        ),
-        spark_writer_user=analytics_writer_db.user,
-        spark_writer_password=analytics_writer_db.password,
-        analytics_reader_user=analytics_reader_db.user,
-        analytics_reader_password=analytics_reader_db.password,
+        fdw_reader_password=_get_str(env, "MW_ANALYTICS_FDW_READER_PASSWORD", "fdw_reader_pwd"),
         fdw_remote_user=_get_str(env, "MW_FDW_REMOTE_USER", master_db.user),
         fdw_remote_password=_get_str(env, "MW_FDW_REMOTE_PASSWORD", master_db.password),
     )
 
-    return AppSettings(
+    settings = AppSettings(
         env_name=_get_str(env, "MW_ENV", "local"),
         paths=PathSettings(
             project_root=project_root,
@@ -209,13 +232,19 @@ def get_settings() -> AppSettings:
             silver_inventory_path=data_root / "silver" / "inventory_events",
             quarantine_inventory_path=data_root / "quarantine" / "inventory_events",
             inventory_checkpoint_path=checkpoint_root / "inventory_events",
+            bronze_procurement_path=data_root / "bronze" / "procurement_events",
+            silver_procurement_path=data_root / "silver" / "procurement_events",
+            quarantine_procurement_path=data_root / "quarantine" / "procurement_events",
+            procurement_checkpoint_path=checkpoint_root / "procurement_events",
+            bronze_sales_path=data_root / "bronze" / "sales_events",
+            silver_sales_path=data_root / "silver" / "sales_events",
+            quarantine_sales_path=data_root / "quarantine" / "sales_events",
+            sales_checkpoint_path=checkpoint_root / "sales_events",
         ),
         kafka=KafkaSettings(
             bootstrap_servers=_get_str(env, "MW_KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
             inventory_topic=_get_str(env, "MW_KAFKA_INVENTORY_TOPIC", "inventory_events"),
-            procurement_topic=_get_str(
-                env, "MW_KAFKA_PROCUREMENT_TOPIC", "procurement_events"
-            ),
+            procurement_topic=_get_str(env, "MW_KAFKA_PROCUREMENT_TOPIC", "procurement_events"),
             sales_topic=_get_str(env, "MW_KAFKA_SALES_TOPIC", "sales_events"),
         ),
         spark=SparkSettings(
@@ -228,26 +257,47 @@ def get_settings() -> AppSettings:
             interval_seconds=_get_int(env, "MW_PRODUCER_INTERVAL_SECONDS", 5),
             max_events=_get_int(env, "MW_PRODUCER_MAX_EVENTS", 20),
             dry_run=_get_bool(env, "MW_PRODUCER_DRY_RUN", False),
-            inventory_seed=_get_str(env, "MW_SAMPLE_SEED", "medical-warehouse-local"),
-            inventory_start_time=_get_str(
-                env, "MW_SAMPLE_START_TIME", "2026-01-01T08:00:00+00:00"
-            ),
-            sample_product_id=_get_str(
-                env, "MW_SAMPLE_PRODUCT_ID", "P-LOCAL-CALPOL-500"
-            ),
-            sample_warehouse_id=_get_str(
-                env, "MW_SAMPLE_WAREHOUSE_ID", "W-LOCAL-RECEIVING-01"
-            ),
-            sample_supplier_id=_get_str(
-                env, "MW_SAMPLE_SUPPLIER_ID", "SUP-LOCAL-HIMALAYAN"
-            ),
-            sample_batch_number=_get_str(env, "MW_SAMPLE_BATCH_NUMBER", "BATCH-LOCAL-001"),
-            sample_expiry_date=_get_str(env, "MW_SAMPLE_EXPIRY_DATE", "2027-12-31"),
-            sample_currency=_get_str(env, "MW_SAMPLE_CURRENCY", "INR"),
+        ),
+        sample_data=SampleDataSettings(
+            seed=_get_str(env, "MW_SAMPLE_SEED", "medical-warehouse-local"),
+            start_time=_get_str(env, "MW_SAMPLE_START_TIME", "2026-01-01T08:00:00+00:00"),
+            product_id=_get_str(env, "MW_SAMPLE_PRODUCT_ID", "P-LOCAL-CALPOL-500"),
+            warehouse_id=_get_str(env, "MW_SAMPLE_WAREHOUSE_ID", "W-LOCAL-RECEIVING-01"),
+            supplier_id=_get_str(env, "MW_SAMPLE_SUPPLIER_ID", "SUP-LOCAL-HIMALAYAN"),
+            batch_number=_get_str(env, "MW_SAMPLE_BATCH_NUMBER", "BATCH-LOCAL-001"),
+            expiry_date=_get_str(env, "MW_SAMPLE_EXPIRY_DATE", "2027-12-31"),
+            currency=_get_str(env, "MW_SAMPLE_CURRENCY", "INR"),
         ),
         master_db=master_db,
         analytics_admin_db=analytics_admin_db,
         analytics_writer_db=analytics_writer_db,
         analytics_reader_db=analytics_reader_db,
         warehouse_roles=warehouse_roles,
+        webapp_api_key=_get_str(env, "MW_WEBAPP_API_KEY", "") or None,
+        platform_api_key=_get_str(env, "MW_PLATFORM_API_KEY", "") or None,
     )
+    _warn_weak_credentials(settings)
+    return settings
+
+
+def _warn_weak_credentials(settings: AppSettings) -> None:
+    env = settings.env_name.lower()
+    checks = [
+        ("MW_MASTER_DB_PASSWORD", settings.master_db.password),
+        ("MW_ANALYTICS_ADMIN_DB_PASSWORD", settings.analytics_admin_db.password),
+        ("MW_ANALYTICS_WRITER_DB_PASSWORD", settings.analytics_writer_db.password),
+        ("MW_ANALYTICS_READER_DB_PASSWORD", settings.analytics_reader_db.password),
+        ("MW_ANALYTICS_FDW_READER_PASSWORD", settings.warehouse_roles.fdw_reader_password),
+    ]
+    weak = [var for var, pwd in checks if pwd in _WEAK_PASSWORDS]
+    if not weak:
+        return
+    msg = "Weak/default credentials detected for: %s"
+    if env in ("local", "dev", "development", "test"):
+        _log.warning("SECURITY WARNING — %s — %s", msg % ", ".join(weak),
+                     "Acceptable in local/dev; change before any shared deployment.")
+    else:
+        raise RuntimeError(
+            f"SECURITY ERROR: Weak credentials detected in '{env}' environment "
+            f"for: {', '.join(weak)}. Set proper passwords via environment variables."
+        )

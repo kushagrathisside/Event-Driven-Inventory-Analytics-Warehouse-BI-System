@@ -1,3 +1,15 @@
+# Full dependency lockfile for the Airflow Docker container (see docker/airflow/Dockerfile).
+# Generated with: pip freeze | sort
+# For project top-level dependencies and optional groups, see pyproject.toml.
+#
+# KNOWN SECURITY NOTES (run `pip-audit` quarterly):
+#   Werkzeug==2.2.3  CVE-2023-25577, CVE-2023-46136 — DoS via multipart.
+#   Flask==2.2.5     Flask 2.x is EOL. Both are pinned by apache-airflow==2.8.1.
+#   apache-airflow==2.8.1  Multiple CVEs addressed in 2.9+/3.x.
+#   Upgrade path: bump Airflow to 3.x once Python <3.13 constraint is resolved.
+#   The standalone webapp (src/medwarehouse_webapp) runs on its own; see pyproject.toml
+#   optional[webapp] for its independently upgradeable Flask/Werkzeug dependency.
+
 aiohappyeyeballs==2.6.1
 aiohttp==3.10.11
 aiosignal==1.4.0

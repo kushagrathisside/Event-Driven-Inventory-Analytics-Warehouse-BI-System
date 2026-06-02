@@ -3,10 +3,12 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
-from flask import Blueprint, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
 from medwarehouse.platform.control import ControlPlaneService
 from medwarehouse.platform.services import StatusService
+
+_ALLOWED_INFRA_ACTIONS = frozenset({"start", "stop"})
 
 
 def create_pages_blueprint(
@@ -78,18 +80,24 @@ def create_pages_blueprint(
 
     @blueprint.post("/jobs/<job_id>/start")
     def start_job(job_id: str):
-        control_plane.start_job(job_id)
+        ok, message = control_plane.start_job(job_id)
+        flash(message, "success" if ok else "error")
         return redirect(url_for("platform_pages.jobs"))
 
     @blueprint.post("/jobs/<job_id>/stop")
     def stop_job(job_id: str):
-        control_plane.stop_job(job_id)
+        ok, message = control_plane.stop_job(job_id)
+        flash(message, "success" if ok else "error")
         return redirect(url_for("platform_pages.jobs"))
 
     @blueprint.post("/infra/<action>")
     def infra_action(action: str):
-        control_plane.run_infra_action(action)
+        if action not in _ALLOWED_INFRA_ACTIONS:
+            flash(f"Unknown infrastructure action '{action}'.", "error")
+            return redirect(url_for("platform_pages.infrastructure"))
+        ok, message = control_plane.run_infra_action(action)
         status_service.invalidate()
+        flash(message, "success" if ok else "error")
         return redirect(url_for("platform_pages.infrastructure"))
 
     return blueprint

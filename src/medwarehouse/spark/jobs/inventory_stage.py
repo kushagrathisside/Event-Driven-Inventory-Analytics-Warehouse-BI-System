@@ -4,6 +4,7 @@ from pyspark.sql import functions as F
 
 from medwarehouse.config import get_settings
 from medwarehouse.logging import get_logger
+from medwarehouse.spark.jobs._stage import write_to_staging
 from medwarehouse.spark.session import build_spark_session
 
 
@@ -38,22 +39,9 @@ def run_inventory_event_staging() -> int:
         "raw_event",
     )
 
-    row_count = staged.count()
-    logger.info(
-        "Writing inventory staging rows=%s jdbc=%s table=analytics.stg_inventory_events",
-        row_count,
-        settings.analytics_writer_db.jdbc_url,
+    return write_to_staging(
+        spark, staged,
+        connection=settings.analytics_writer_db,
+        table="analytics.stg_inventory_events",
+        domain_label="inventory",
     )
-    (
-        staged.write.format("jdbc")
-        .option("url", settings.analytics_writer_db.jdbc_url)
-        .option("dbtable", "analytics.stg_inventory_events")
-        .option("user", settings.analytics_writer_db.user)
-        .option("password", settings.analytics_writer_db.password)
-        .option("driver", "org.postgresql.Driver")
-        .option("truncate", "true")
-        .mode("overwrite")
-        .save()
-    )
-    spark.stop()
-    return row_count

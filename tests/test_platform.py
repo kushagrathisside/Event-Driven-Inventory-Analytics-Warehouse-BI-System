@@ -10,7 +10,7 @@ from medwarehouse.platform.app import create_platform_app
 from medwarehouse.platform.infra import docker_service_status
 from medwarehouse.platform.services import ControlPlaneService
 from medwarehouse.platform.services.status import StatusService
-from medwarehouse.platform.store import ControlPlaneStore
+from medwarehouse.platform.control.store import ControlPlaneStore
 
 
 def _sample_full_status() -> dict:

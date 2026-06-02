@@ -256,3 +256,4 @@ GRANT SELECT ON analytics.v_dim_product_current TO {{ANALYTICS_READER_USER}};
 GRANT SELECT ON analytics.v_dim_warehouse_current TO {{ANALYTICS_READER_USER}};
 GRANT SELECT ON analytics.v_inventory_balance TO {{ANALYTICS_READER_USER}};
 GRANT SELECT ON analytics.v_inventory_snapshot TO {{ANALYTICS_READER_USER}};
+GRANT EXECUTE ON FUNCTION analytics.run_inventory_quality_checks() TO {{ANALYTICS_READER_USER}};

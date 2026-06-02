@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Iterable
-from uuid import NAMESPACE_URL, uuid5
+
+from medwarehouse.contracts._utils import deterministic_uuid, to_utc_iso as _to_utc_iso
 
 
 INVENTORY_SCHEMA_VERSION = 1
@@ -49,14 +50,6 @@ RULES: dict[str, InventoryRule] = {
 }
 
 
-def _to_utc_iso(timestamp: datetime) -> str:
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=timezone.utc)
-    return timestamp.astimezone(timezone.utc).isoformat()
-
-
-def deterministic_uuid(seed: str, name: str) -> str:
-    return str(uuid5(NAMESPACE_URL, f"{seed}:{name}"))
 
 
 def build_inventory_event(
@@ -105,6 +98,10 @@ def validate_inventory_event_dict(event: dict[str, Any]) -> list[str]:
     for top_level_field in ("event_id", "event_type", "event_time", "producer", "schema_version"):
         if not event.get(top_level_field):
             errors.append(f"missing_{top_level_field}")
+
+    schema_version = event.get("schema_version")
+    if schema_version is not None and int(schema_version) != INVENTORY_SCHEMA_VERSION:
+        errors.append("unsupported_schema_version")
 
     if event_type not in INVENTORY_EVENT_TYPES:
         errors.append("unsupported_event_type")

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
-from pyspark.sql import Window
 from pyspark.sql.types import IntegerType, StringType, StructField, StructType
 
 from medwarehouse.config import get_settings
 from medwarehouse.logging import get_logger
+from medwarehouse.spark.jobs._silver import split_silver_quarantine
 from medwarehouse.spark.session import build_spark_session
 
 
@@ -130,40 +130,7 @@ def _normalize_inventory_events(bronze_df: DataFrame) -> tuple[DataFrame, DataFr
         .withColumn("event_date", F.to_date(F.col("event_time_ts")))
         .withColumn("dedupe_key", F.coalesce(F.col("event_id"), F.sha2(F.col("raw_event"), 256)))
     )
-
-    validated = _build_validation_columns(parsed)
-    window = Window.partitionBy("dedupe_key").orderBy(
-        F.col("source_kafka_timestamp").desc_nulls_last(),
-        F.col("source_offset").desc_nulls_last(),
-    )
-    ranked = validated.withColumn("dedupe_rank", F.row_number().over(window)).withColumn(
-        "duplicate_error",
-        F.when(F.col("dedupe_rank") > 1, F.lit("duplicate_event_id")),
-    )
-
-    quarantined = (
-        ranked.withColumn(
-            "quarantine_reasons_raw",
-            F.concat(F.col("validation_errors"), F.array(F.col("duplicate_error"))),
-        )
-        .withColumn(
-            "quarantine_reasons",
-            F.expr("filter(quarantine_reasons_raw, x -> x is not null)"),
-        )
-        .drop("validation_errors_raw", "quarantine_reasons_raw", "duplicate_error")
-    )
-
-    silver = (
-        quarantined.filter(F.size(F.col("quarantine_reasons")) == 0)
-        .drop("validation_errors", "quarantine_reasons", "dedupe_key", "dedupe_rank")
-        .withColumnRenamed("event_time_ts", "event_time")
-    )
-    quarantine = (
-        quarantined.filter(F.size(F.col("quarantine_reasons")) > 0)
-        .drop("validation_errors_raw", "dedupe_key")
-        .withColumnRenamed("event_time_ts", "event_time")
-    )
-    return silver, quarantine
+    return split_silver_quarantine(parsed, validation_builder=_build_validation_columns)
 
 
 def run_inventory_silver() -> dict[str, int]:

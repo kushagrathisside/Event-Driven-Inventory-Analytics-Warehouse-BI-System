@@ -3,14 +3,25 @@ from __future__ import annotations
 from typing import Any
 
 from medwarehouse.config import AppSettings, get_settings
+from medwarehouse.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 EXPECTED_TABLES = [
     "dim_supplier",
     "dim_product",
     "dim_warehouse",
+    "dim_customer",
     "stg_inventory_events",
     "fact_inventory_events",
+    "stg_procurement_events",
+    "fact_procurement_events",
+    "stg_sales_events",
+    "fact_sales_events",
+    "fact_inventory_balance",
+    "reorder_policies",
+    "pending_purchase_orders",
 ]
 
 EXPECTED_VIEWS = [
@@ -19,6 +30,12 @@ EXPECTED_VIEWS = [
     "v_dim_warehouse_current",
     "v_inventory_balance",
     "v_inventory_snapshot",
+    "v_po_lifecycle",
+    "v_supplier_performance",
+    "v_revenue_summary",
+    "v_reorder_risk",
+    "v_controlled_substance_register",
+    "v_supplier_license_expiry",
 ]
 
 TRACKED_ROLES = [
@@ -28,13 +45,17 @@ TRACKED_ROLES = [
 ]
 
 COUNT_QUERIES = {
-    "analytics.stg_inventory_events": "event_time",
-    "analytics.fact_inventory_events": "event_time",
-    "analytics.v_inventory_snapshot": "last_event_time",
+    "analytics.stg_inventory_events":    "event_time",
+    "analytics.fact_inventory_events":   "event_time",
+    "analytics.v_inventory_snapshot":    "last_event_time",
+    "analytics.stg_procurement_events":  "event_time",
+    "analytics.fact_procurement_events": "event_time",
+    "analytics.stg_sales_events":        "event_time",
+    "analytics.fact_sales_events":       "event_time",
 }
 
 
-def collect_inventory_warehouse_state(
+def collect_warehouse_state(
     *,
     settings: AppSettings | None = None,
     infra_status: dict[str, Any] | None = None,
@@ -94,10 +115,11 @@ def collect_inventory_warehouse_state(
                         row = cursor.fetchone()
                         counts[relation] = int(row[0]) if row is not None else 0
                         last_updates[relation] = row[1].isoformat() if row and row[1] else None
-                    except Exception:
+                    except Exception as exc:
                         conn.rollback()
                         counts[relation] = None
                         last_updates[relation] = None
+                        logger.debug("Count query failed for %s: %s", relation, exc)
 
                 quality_issues = []
                 quality_issue_total = 0
@@ -115,8 +137,9 @@ def collect_inventory_warehouse_state(
                         }
                         quality_issues.append(item)
                         quality_issue_total += int(issue_count)
-                except Exception:
+                except Exception as exc:
                     conn.rollback()
+                    logger.debug("Quality check query failed (warehouse may not be bootstrapped): %s", exc)
 
         missing_tables = [
             table_name for table_name in EXPECTED_TABLES if table_name not in analytics_tables
@@ -199,3 +222,7 @@ def warehouse_error_message(
 def _fetch_scalar_list(cursor, sql: str) -> list[str]:
     cursor.execute(sql)
     return [row[0] for row in cursor.fetchall()]
+
+
+# Backward-compatibility alias
+collect_inventory_warehouse_state = collect_warehouse_state

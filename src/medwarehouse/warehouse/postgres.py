@@ -13,5 +13,8 @@ def connect(connection: PostgresConnection) -> Iterator[psycopg2.extensions.conn
     conn = psycopg2.connect(connection.psycopg_dsn)
     try:
         yield conn
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()

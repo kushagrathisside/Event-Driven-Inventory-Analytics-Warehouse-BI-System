@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Iterable
-
-from confluent_kafka import Producer
+from typing import TYPE_CHECKING, Iterable
 
 from medwarehouse.config import get_settings
 from medwarehouse.logging import get_logger
+
+if TYPE_CHECKING:
+    from confluent_kafka import Producer
+    from typing import Iterable as _Iterable
 
 
 logger = get_logger(__name__)
 
 
 def build_kafka_producer() -> Producer:
+    from confluent_kafka import Producer as _Producer
+
     settings = get_settings()
-    return Producer({"bootstrap.servers": settings.kafka.bootstrap_servers})
+    return _Producer({"bootstrap.servers": settings.kafka.bootstrap_servers})
 
 
 def emit_events(
@@ -49,3 +53,29 @@ def emit_events(
         producer.flush()
 
     return produced
+
+
+def run_producer(
+    *,
+    topic: str,
+    key_field: str,
+    generate: "Iterable[dict]",
+    max_events: int | None = None,
+    dry_run: bool | None = None,
+    label: str = "producer",
+) -> int:
+    """
+    Shared runner for all domain producers.
+    Resolves max_events and dry_run from settings if not supplied, then calls emit_events.
+    """
+    settings = get_settings()
+    event_count = max(settings.producer.max_events if max_events is None else max_events, 1)
+    dry_run = settings.producer.dry_run if dry_run is None else dry_run
+    logger.info("Starting %s topic=%s count=%s dry_run=%s", label, topic, event_count, dry_run)
+    return emit_events(
+        topic=topic,
+        events=generate,
+        key_field=key_field,
+        interval_seconds=settings.producer.interval_seconds,
+        dry_run=dry_run,
+    )

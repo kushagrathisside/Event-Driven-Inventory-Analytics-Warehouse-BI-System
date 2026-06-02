@@ -94,6 +94,11 @@
           </article>
         </section>
 
+        {% with messages = get_flashed_messages(with_categories=True) %}
+          {% for category, message in messages %}
+          <div class="feedback feedback-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endwith %}
         <div id="feedbackBanner" class="feedback hidden"></div>
 
         {% block content %}{% endblock %}
