@@ -65,7 +65,7 @@ This script:
 ./scripts/start_services.sh --with-airflow
 ```
 
-Airflow initialises its database, creates an admin user (credentials set in `.env` or defaulting to `admin`/`admin`), and starts the webserver on port 8080 and scheduler.
+Airflow initialises its database, creates an admin user (credentials set via `AIRFLOW_ADMIN_PASSWORD` in `.env`, defaulting to `admin`), and starts the webserver and scheduler. The Airflow webserver binds to host port **8090** (not the default 8080) to avoid conflict with the operator webapp on port 8080.
 
 ### Stop all services
 
@@ -192,11 +192,11 @@ Three DAGs are available after Airflow starts:
 
 | DAG ID | Trigger | Description |
 |---|---|---|
-| `inventory_gold_pipeline` | Manual | Full inventory Gold pipeline (8 tasks) |
+| `inventory_gold_pipeline` | Manual | Full inventory Gold pipeline (8 tasks, includes balance refresh + reorder check) |
 | `procurement_gold_pipeline` | Manual | Full procurement Gold pipeline (6 tasks) |
 | `sales_gold_pipeline` | Manual | Full sales Gold pipeline (6 tasks) |
 
-Access Airflow UI at `http://localhost:8080` (credentials: `admin` / `admin` unless changed).
+Access Airflow UI at **`http://localhost:8090`** (credentials: `admin` / value of `AIRFLOW_ADMIN_PASSWORD`, default `admin`).
 
 ---
 
@@ -207,12 +207,12 @@ Access Airflow UI at `http://localhost:8080` (credentials: `admin` / `admin` unl
 | PostgreSQL | 5432 | Hosts both `medwarehouse_master` and `medwarehouse_analytics` |
 | Kafka | 9092 | External listener (localhost) |
 | Kafka internal | 29092 | Docker network listener |
-| Zookeeper | 2181 | Kafka coordination |
-| Airflow webserver | 8080 | DAG management UI |
-| Monitoring platform | 8787 | Operational monitoring UI |
-| Operator webapp | 8080 / 8080 | Data entry and PO management |
+| ZooKeeper | 2181 | Kafka coordination |
+| Airflow webserver | **8090** | DAG management UI (remapped from default 8080 — see note below) |
+| Monitoring platform | 8787 | Operational monitoring dashboard |
+| Operator webapp | 8080 | Data entry and PO management |
 
-> Note: Airflow webserver and the operator webapp both default to port 8080. Run them on different ports if both are needed simultaneously: `python -m medwarehouse_webapp --port 8090`
+> **Port note:** The Airflow webserver is mapped to host port **8090** in `docker-compose.yml` to avoid conflict with the operator webapp, which runs on port 8080. Do not change the operator webapp to 8090 unless you also change the Airflow mapping.
 
 ---
 

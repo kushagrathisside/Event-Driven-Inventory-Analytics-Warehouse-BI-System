@@ -1,7 +1,7 @@
 # Data Dictionary
 
 Complete reference for all tables, views, and functions in the medwarehouse system.
-Last updated: 2026-06-01
+Last updated: 2026-06-06
 
 ---
 

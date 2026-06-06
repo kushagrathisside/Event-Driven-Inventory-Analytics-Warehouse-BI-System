@@ -99,10 +99,12 @@ python -m medwarehouse orchestration build-sales-gold
 Three DAGs are available (`schedule=None` — trigger manually):
 
 ```
-http://localhost:8080
+http://localhost:8090
 DAGs: inventory_gold_pipeline | procurement_gold_pipeline | sales_gold_pipeline
-Default credentials: admin / admin (change in production)
+Default credentials: admin / admin (change AIRFLOW_ADMIN_PASSWORD in .env before first start)
 ```
+
+> Airflow webserver runs on port **8090** (remapped from default 8080 to avoid conflict with the operator webapp on 8080).
 
 ---
 

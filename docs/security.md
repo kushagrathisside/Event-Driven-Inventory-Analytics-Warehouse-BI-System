@@ -24,6 +24,8 @@ MW_PLATFORM_API_KEY=<hex-32-bytes>   # Monitoring platform (port 8787)
 openssl rand -hex 32
 ```
 
+**Constant-time comparison:** Keys are compared using `hmac.compare_digest()` rather than the `==` operator. This prevents timing-based side-channel attacks where an attacker could infer the key length or prefix by measuring response latency differences.
+
 **Exemptions:** The `/health` endpoint and `/static/*` paths are always accessible without authentication.
 
 **Behaviour when no key is configured:** Auth is skipped entirely and a `SECURITY WARNING` is logged at startup. This is acceptable for local development only.
@@ -111,10 +113,12 @@ This system handles pharmaceutical inventory, which is subject to Indian drug re
 
 ## Known Security Gaps (Tracked)
 
-| Gap | Severity | Mitigation |
-|---|---|---|
-| No TLS on Kafka | Medium | Acceptable for internal/single-node deployments; add SASL for multi-node |
-| No session-based auth (stateless API key only) | Low | Add JWT or session tokens if user-level auditing is needed |
-| Airflow admin/admin default | High | Change `AIRFLOW__WEBSERVER__SECRET_KEY` and admin credentials before sharing |
-| No rate limiting on Flask APIs | Low | Add `Flask-Limiter` for production deployments |
-| Flask 2.2.x in Airflow container (CVE-2023-25577) | Medium | Upgrade Airflow to 3.x when Python 3.13 constraint is met |
+| Gap | Severity | Status | Mitigation |
+|---|---|---|---|
+| No TLS on Kafka | Medium | Open | Acceptable for internal/single-node deployments; configure SASL/SCRAM or mTLS for multi-node |
+| No session-based auth (stateless API key only) | Low | Open | Add JWT or session tokens if per-user auditing is required |
+| Airflow default credentials | High | **Configurable** | Set `AIRFLOW_ADMIN_PASSWORD` in `.env` before first `docker compose up`; also set `AIRFLOW__WEBSERVER__SECRET_KEY` for production |
+| No rate limiting on Flask APIs | Low | Open | Add `Flask-Limiter` for production deployments |
+| Flask pinned to 2.x in Airflow container | Low | Open | Upgrade Airflow image to 3.x when dependency constraints allow |
+| Idempotency store is in-memory | Low | Open | Current `IdempotencyStore` uses a per-process dict with background TTL eviction; replace with Redis for multi-process or multi-instance deployments |
+| PostgreSQL binds to `0.0.0.0` in Docker | Medium | Open | Restrict to specific IP ranges via `pg_hba.conf` or Docker network isolation for non-development deployments |

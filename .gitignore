@@ -28,3 +28,4 @@ airflow/logs/
 airflow/dags/__pycache__/
 
 metastore_db/
+scripts/build_docs_pdf.py

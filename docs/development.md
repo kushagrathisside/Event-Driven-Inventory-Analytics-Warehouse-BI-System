@@ -116,16 +116,21 @@ The test suite is split into tiers:
 ### Unit tests (no infrastructure required)
 ```bash
 pytest tests/ -v
+# 82 tests — no live database, Kafka, or Spark required
 ```
 
 These tests cover:
-- Event contract validation (`test_contracts.py`, `test_domain_contracts.py`)
-- Configuration loading and credential hardening (`test_config.py`, `test_warehouse_functions.py`)
-- SQL template rendering (`test_sql_runner.py`)
-- Warehouse function call patterns (`test_warehouse_functions.py`)
-- Platform UI and API routes (`test_platform.py`)
-- CLI argument parsing (`test_cli.py`)
-- API key authentication (`test_warehouse_functions.py::TestWebappAuth`)
+
+| File | Coverage |
+|---|---|
+| `test_cli.py` | CLI argument parsing and dry-run producer |
+| `test_config.py` | Settings construction and credential validation |
+| `test_contracts.py` | Inventory event building and all validation rules |
+| `test_domain_contracts.py` | Procurement and sales contract validation |
+| `test_platform.py` | StatusService, ControlPlaneStore, Flask routes |
+| `test_sql_runner.py` | SQL template-variable rendering |
+| `test_warehouse_functions.py` | Warehouse wrappers, auth middleware, credential warnings |
+| `test_webapp_services.py` | Stock service (no `::uuid` casts), IdempotencyStore (TTL eviction + thread safety), TTLCache stampede protection, order state machine, reorder SET clause |
 
 ### Integration tests (requires live PostgreSQL)
 ```bash

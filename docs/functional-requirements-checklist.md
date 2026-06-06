@@ -1,6 +1,6 @@
 # Functional Requirements Checklist
 
-Assessment date: 2026-06-02
+Assessment date: 2026-06-06
 
 ---
 
@@ -26,7 +26,7 @@ Assessment date: 2026-06-02
 | Audit/Compliance | FDW views | Complete | — | — |
 | Staff Performance | FDW views | Complete | — | — |
 
-Automated test count: **60 unit tests passing**. Integration tests (requiring a live PostgreSQL connection) are not yet automated.
+Automated test count: **82 unit tests passing** across 8 test files. Integration tests (requiring a live PostgreSQL connection) are not yet automated.
 
 ---
 
@@ -74,7 +74,7 @@ Automated test count: **60 unit tests passing**. Integration tests (requiring a 
 | Operator webapp frontend | HTML/CSS/JS UI | **Not started** | REST API is complete; frontend to be built separately |
 | Shell scripts | Local flow scripts for all 3 domains | Complete | `scripts/run_*_flow.sh` |
 | Documentation | architecture, data-dict, API reference, deployment, security, 9 domain docs | Complete | `docs/` |
-| Unit tests | Contract validation, config, platform, auth, warehouse functions | Complete | 60 tests |
+| Unit tests | Contract validation, config, platform, auth, warehouse functions, webapp services | Complete | 82 tests across 8 files |
 | Integration tests | Live DB stored procedure tests | **Not started** | Requires `MW_INTEGRATION_TEST=1` and live PostgreSQL |
 | CI/CD | Automated test pipeline | **Not started** | No GitHub Actions configured |
 

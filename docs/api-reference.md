@@ -6,6 +6,8 @@ All endpoints require `X-API-Key: <key>` or `Authorization: Bearer <key>` unless
 
 The `/health` endpoint is always accessible.
 
+> **ID types:** `product_id`, `warehouse_id`, `supplier_id`, `customer_id` are **text strings** (business keys), not UUID type. In the sample dataset they take the form `P-LOCAL-CALPOL-500` / `W-LOCAL-RECEIVING-01`. In a production OLTP deployment they may be UUID-format strings; do not apply PostgreSQL `::uuid` casts.
+
 ---
 
 ## Health
@@ -28,12 +30,12 @@ Record goods received into a warehouse lot and emit a `STOCK_RECEIVED` Kafka eve
 **Request body:**
 ```json
 {
-  "product_id": "uuid",
-  "warehouse_id": "uuid",
+  "product_id": "string",
+  "warehouse_id": "string",
   "batch_number": "string",
   "expiry_date": "YYYY-MM-DD",
   "quantity": 200,
-  "supplier_id": "uuid",            // optional
+  "supplier_id": "string",          // optional
   "cost_price_per_unit": 85.50,     // optional
   "sale_price_per_unit": 120.00     // optional
 }
@@ -55,12 +57,12 @@ Record a stock sale, reduce lot quantity, and emit `STOCK_SOLD`.
 **Request body:**
 ```json
 {
-  "product_id": "uuid",
-  "warehouse_id": "uuid",
+  "product_id": "string",
+  "warehouse_id": "string",
   "batch_number": "string",
   "expiry_date": "YYYY-MM-DD",
   "quantity": 24,
-  "sale_id": "uuid"
+  "sale_id": "string"
 }
 ```
 
@@ -75,8 +77,8 @@ Record a manual stock adjustment and emit `STOCK_ADJUSTED`.
 **Request body:**
 ```json
 {
-  "product_id": "uuid",
-  "warehouse_id": "uuid",
+  "product_id": "string",
+  "warehouse_id": "string",
   "batch_number": "string",
   "quantity_delta": -5,
   "reason": "AUDIT"
@@ -95,8 +97,8 @@ Record expired stock removal and emit `STOCK_EXPIRED`.
 **Request body:**
 ```json
 {
-  "product_id": "uuid",
-  "warehouse_id": "uuid",
+  "product_id": "string",
+  "warehouse_id": "string",
   "batch_number": "string",
   "expiry_date": "YYYY-MM-DD",
   "quantity": 5
@@ -171,12 +173,12 @@ Create a reorder policy. Replaces any existing active policy for the same produc
 **Request body:**
 ```json
 {
-  "product_id": "uuid",
-  "warehouse_id": "uuid",
+  "product_id": "string",
+  "warehouse_id": "string",
   "reorder_point": 50,
   "reorder_quantity": 200,
-  "preferred_supplier_id": "uuid",  // optional
-  "lead_time_days": 7               // optional, default 7
+  "preferred_supplier_id": "string",  // optional
+  "lead_time_days": 7                 // optional, default 7
 }
 ```
 

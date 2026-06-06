@@ -1,6 +1,6 @@
 # Control Panel Testing Plan
 
-Assessment date: 2026-04-27 UTC
+Assessment date: 2026-04-27 UTC (source paths updated 2026-06-06)
 
 This page defines how to test the Medical Warehouse control panel based on the current implementation in `src/medwarehouse/platform/`, the UI template, the JSON endpoints, and the existing automated tests.
 
@@ -16,12 +16,14 @@ The control panel currently includes:
 
 Primary source files:
 
-- `src/medwarehouse/platform/app.py`
-- `src/medwarehouse/platform/controller.py`
-- `src/medwarehouse/platform/infra.py`
-- `src/medwarehouse/platform/status.py`
-- `src/medwarehouse/platform/templates/index.html`
-- `src/medwarehouse/platform/catalog.py`
+- `src/medwarehouse/platform/api/app.py` — Flask application factory
+- `src/medwarehouse/platform/api/routes.py` — API + page route blueprints
+- `src/medwarehouse/platform/control/` — Job runner, infra actions, `ProcessSupervisor`, job catalog
+- `src/medwarehouse/platform/services/status.py` — `StatusService` (TTL cache + probes)
+- `src/medwarehouse/platform/services/alerts/` — Alert engine and rule modules
+- `src/medwarehouse/platform/probes/` — `InfraProbe`, `WarehouseProbe`, `PipelineProbe`, etc.
+- `src/medwarehouse/platform/ui/templates/` — Jinja2 templates (base.html + page templates)
+- `src/medwarehouse/platform/control/catalog.py` — `JOB_SPECS` catalog
 - `tests/test_platform.py`
 
 ## Test objectives
@@ -73,7 +75,7 @@ python -m medwarehouse platform serve --host 127.0.0.1 --port 8787
 | FR-16 | The page shall prevent duplicate starts of the same running job | Repeated start requests for an active job return `ok=false` with a clear message | Manual + automated | Gap |
 | FR-17 | The page shall reject stop requests for jobs that are not running | Stop request returns `ok=false` with a clear message | Manual + automated | Gap |
 | FR-18 | The page shall reject unknown job ids gracefully | Unknown job requests return a non-crashing JSON response with `ok=false` | Manual + automated | Gap |
-| FR-19 | The page shall reject unknown infra actions gracefully | Unknown infra action returns a non-crashing JSON response with `ok=false` | Manual + automated | Gap |
+| FR-19 | The page shall reject unknown infra actions gracefully | Unknown infra action returns a non-crashing JSON response with `ok=false` | Manual + automated | Complete — `_ALLOWED_INFRA_ACTIONS` whitelist enforced in `api/routes.py` |
 | FR-20 | The page shall show recent job logs and infra logs | Latest log lines appear in the UI after command execution | Manual | Gap |
 | FR-21 | The refresh button shall reload the page | Clicking refresh reloads the current page without breaking state | Manual | Gap |
 | FR-22 | The button-based UI controls shall call the correct JSON endpoints | Clicking start/stop/refresh buttons performs the intended action and reload flow | Manual | Gap |
@@ -119,8 +121,8 @@ python -m medwarehouse platform serve --host 127.0.0.1 --port 8787
 5. Confirm Bronze, Silver, and Quarantine artifact summaries reflect actual filesystem state.
 6. Confirm coverage cards correctly show:
    - inventory as end-to-end implemented
-   - procurement as producer only
-   - sales as producer only
+   - procurement as end-to-end implemented
+   - sales as end-to-end implemented
 
 #### Failure handling
 
